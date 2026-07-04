@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Patient & Client Registry</title>
+  <link rel="stylesheet" href="add-pandc.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<!-- TOP NAV -->
+<header class="topbar">
+  <div class="topbar-left">
+    <svg class="topbar-logo" viewBox="0 0 32 32" fill="none">
+      <rect width="32" height="32" rx="8" fill="#2563EB"/>
+      <path d="M16 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8zm0 10c4.42 0 8 1.79 8 4v2H8v-2c0-2.21 3.58-4 8-4z" fill="white"/>
+    </svg>
+    <span class="topbar-title">PatientBase</span>
+    <span class="topbar-badge" id="tenant-badge">Clinic</span>
+  </div>
+  <div class="topbar-right">
+    <div class="search-wrap">
+      <svg class="search-icon" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="6" stroke="#94a3b8" stroke-width="1.5"/><path d="M15 15l-3-3" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <input type="text" id="global-search" class="search-input" placeholder="Search by name, mobile, ID…" autocomplete="off" />
+      <div class="search-results" id="search-dropdown"></div>
+    </div>
+    <button class="btn btn-primary" id="open-add-btn">
+      <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
+      Add Patient
+    </button>
+  </div>
+</header>
+
+<!-- MAIN LAYOUT -->
+<div class="layout">
+
+  <!-- STATS BAR -->
+  <div class="stats-bar" id="stats-bar">
+    <div class="stat-chip"><span class="stat-val" id="stat-total">0</span><span class="stat-lbl">Total Patients</span></div>
+    <div class="stat-chip"><span class="stat-val" id="stat-today">0</span><span class="stat-lbl">Added Today</span></div>
+    <div class="stat-chip"><span class="stat-val" id="stat-visits">0</span><span class="stat-lbl">Total Visits</span></div>
+    <div class="stat-chip active"><span class="stat-val" id="stat-active">0</span><span class="stat-lbl">Active This Month</span></div>
+  </div>
+
+  <!-- TABLE AREA -->
+  <div class="table-area">
+    <div class="table-toolbar">
+      <div class="toolbar-left">
+        <span class="table-title">Patient Records</span>
+        <span class="record-count" id="record-count">0 records</span>
+      </div>
+      <div class="toolbar-right">
+        <select class="filter-select" id="filter-gender">
+          <option value="">All Genders</option>
+          <option value="Male">Male</option>
+          <option value="Female">Female</option>
+          <option value="Other">Other</option>
+        </select>
+        <select class="filter-select" id="filter-blood">
+          <option value="">All Blood Types</option>
+          <option value="A+">A+</option><option value="A-">A-</option>
+          <option value="B+">B+</option><option value="B-">B-</option>
+          <option value="AB+">AB+</option><option value="AB-">AB-</option>
+          <option value="O+">O+</option><option value="O-">O-</option>
+        </select>
+        <button class="btn btn-ghost" id="refresh-btn">
+          <svg viewBox="0 0 20 20" fill="none"><path d="M4 10a6 6 0 0 1 6-6 6 6 0 0 1 4.24 1.76L16 8h-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M16 10a6 6 0 0 1-6 6 6 6 0 0 1-4.24-1.76L4 12h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    <div class="table-scroll">
+      <table class="patient-table" id="patient-table">
+        <thead>
+          <tr>
+            <th data-sort="patient_id">#ID <span class="sort-icon">↕</span></th>
+            <th data-sort="full_name">Name <span class="sort-icon">↕</span></th>
+            <th data-sort="mobile">Mobile</th>
+            <th data-sort="age">Age <span class="sort-icon">↕</span></th>
+            <th>Gender</th>
+            <th>Blood</th>
+            <th data-sort="created_at">Registered <span class="sort-icon">↕</span></th>
+            <th data-sort="last_visit">Last Visit <span class="sort-icon">↕</span></th>
+            <th>Visits</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="patient-tbody">
+          <tr class="empty-row"><td colspan="10"><div class="empty-state"><svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="20" r="8" stroke="#cbd5e1" stroke-width="2"/><path d="M8 40c0-8.84 7.16-16 16-16s16 7.16 16 16" stroke="#cbd5e1" stroke-width="2"/></svg><p>No patients yet. Add your first patient.</p></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- PAGINATION -->
+    <div class="pagination" id="pagination">
+      <button class="page-btn" id="prev-page">← Prev</button>
+      <span class="page-info" id="page-info">Page 1</span>
+      <button class="page-btn" id="next-page">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- MODAL: ADD / EDIT PATIENT                  -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="modal-overlay" id="patient-modal">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-header">
+      <div>
+        <h2 class="modal-title" id="modal-title">Add New Patient</h2>
+        <p class="modal-sub">Fill in the details below. Fields marked * are required.</p>
+      </div>
+      <button class="modal-close" id="close-modal" aria-label="Close">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <form id="patient-form" novalidate>
+        <input type="hidden" id="edit-id" />
+
+        <!-- SECTION: IDENTITY -->
+        <div class="form-section">
+          <div class="form-section-title">Identity</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="f-patient-id">Patient ID <span class="optional">(optional)</span></label>
+              <input type="text" id="f-patient-id" name="patient_id" placeholder="Auto-generated if empty" />
+            </div>
+            <div class="form-group required">
+              <label for="f-full-name">Full Name *</label>
+              <input type="text" id="f-full-name" name="full_name" placeholder="e.g. Rajesh Kumar" required />
+              <span class="field-error" id="err-name"></span>
+            </div>
+            <div class="form-group">
+              <label for="f-mobile">Mobile <span class="optional">(optional)</span></label>
+              <input type="tel" id="f-mobile" name="mobile" placeholder="+91 98765 43210" />
+            </div>
+            <div class="form-group">
+              <label for="f-alt-mobile">Alt. Mobile</label>
+              <input type="tel" id="f-alt-mobile" name="alt_mobile" placeholder="Secondary number" />
+            </div>
+            <div class="form-group">
+              <label for="f-email">Email</label>
+              <input type="email" id="f-email" name="email" placeholder="patient@email.com" />
+            </div>
+            <div class="form-group">
+              <label for="f-dob">Date of Birth</label>
+              <input type="date" id="f-dob" name="dob" />
+            </div>
+            <div class="form-group">
+              <label for="f-age">Age</label>
+              <input type="number" id="f-age" name="age" placeholder="Years" min="0" max="150" />
+            </div>
+            <div class="form-group">
+              <label for="f-gender">Gender</label>
+              <select id="f-gender" name="gender">
+                <option value="">Select</option>
+                <option>Male</option><option>Female</option><option>Other</option><option>Prefer not to say</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION: MEDICAL -->
+        <div class="form-section">
+          <div class="form-section-title">Medical Info</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="f-blood">Blood Group</label>
+              <select id="f-blood" name="blood_group">
+                <option value="">Unknown</option>
+                <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+                <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="f-height">Height (cm)</label>
+              <input type="number" id="f-height" name="height_cm" placeholder="170" />
+            </div>
+            <div class="form-group">
+              <label for="f-weight">Weight (kg)</label>
+              <input type="number" id="f-weight" name="weight_kg" placeholder="65" />
+            </div>
+            <div class="form-group full-width">
+              <label for="f-allergies">Known Allergies</label>
+              <input type="text" id="f-allergies" name="allergies" placeholder="Penicillin, Peanuts, etc." />
+            </div>
+            <div class="form-group full-width">
+              <label for="f-chronic">Chronic Conditions</label>
+              <input type="text" id="f-chronic" name="chronic_conditions" placeholder="Diabetes, Hypertension, Asthma, etc." />
+            </div>
+            <div class="form-group full-width">
+              <label for="f-current-meds">Current Medications</label>
+              <textarea id="f-current-meds" name="current_medications" placeholder="List ongoing medications…" rows="2"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION: ADDRESS & EMERGENCY -->
+        <div class="form-section">
+          <div class="form-section-title">Address & Emergency Contact</div>
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label for="f-address">Address</label>
+              <input type="text" id="f-address" name="address" placeholder="Street, City, State, PIN" />
+            </div>
+            <div class="form-group">
+              <label for="f-city">City</label>
+              <input type="text" id="f-city" name="city" placeholder="Mumbai" />
+            </div>
+            <div class="form-group">
+              <label for="f-pin">PIN / ZIP</label>
+              <input type="text" id="f-pin" name="pin_code" placeholder="400001" />
+            </div>
+            <div class="form-group">
+              <label for="f-emg-name">Emergency Contact Name</label>
+              <input type="text" id="f-emg-name" name="emergency_contact_name" placeholder="Contact person name" />
+            </div>
+            <div class="form-group">
+              <label for="f-emg-mobile">Emergency Mobile</label>
+              <input type="tel" id="f-emg-mobile" name="emergency_contact_mobile" placeholder="+91 …" />
+            </div>
+            <div class="form-group">
+              <label for="f-emg-rel">Relation</label>
+              <select id="f-emg-rel" name="emergency_contact_relation">
+                <option value="">Select</option>
+                <option>Spouse</option><option>Parent</option><option>Child</option>
+                <option>Sibling</option><option>Friend</option><option>Other</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION: VISIT REASON -->
+        <div class="form-section">
+          <div class="form-section-title">Initial Visit</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="f-visit-type">Visit Type</label>
+              <select id="f-visit-type" name="visit_type">
+                <option value="">Select</option>
+                <option>OPD</option><option>Emergency</option><option>Follow-up</option>
+                <option>Consultation</option><option>Procedure</option><option>Lab Test</option>
+                <option>Vaccination</option><option>Walk-in</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="f-department">Department</label>
+              <input type="text" id="f-department" name="department" placeholder="Cardiology, General, etc." />
+            </div>
+            <div class="form-group">
+              <label for="f-doctor">Assigned Doctor</label>
+              <input type="text" id="f-doctor" name="assigned_doctor" placeholder="Dr. Name" />
+            </div>
+            <div class="form-group">
+              <label for="f-insurance">Insurance / Policy No.</label>
+              <input type="text" id="f-insurance" name="insurance_policy" placeholder="Optional" />
+            </div>
+            <div class="form-group full-width">
+              <label for="f-chief-complaint">Chief Complaint / Reason for Visit</label>
+              <textarea id="f-chief-complaint" name="chief_complaint" placeholder="Describe the primary reason for this visit…" rows="3"></textarea>
+            </div>
+            <div class="form-group full-width">
+              <label for="f-notes">Additional Notes</label>
+              <textarea id="f-notes" name="notes" placeholder="Any additional notes, special instructions…" rows="2"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" id="cancel-form">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="submit-btn">
+            <span id="submit-text">Save Patient</span>
+            <span class="spinner" id="submit-spinner" style="display:none"></span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- DRAWER: PATIENT PROFILE + HISTORY          -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="drawer-overlay" id="drawer-overlay"></div>
+<aside class="patient-drawer" id="patient-drawer" aria-label="Patient Profile">
+  <div class="drawer-header">
+    <div class="drawer-avatar" id="drawer-avatar">?</div>
+    <div class="drawer-id-block">
+      <h2 class="drawer-name" id="drawer-name">—</h2>
+      <span class="drawer-pid" id="drawer-pid">ID: —</span>
+    </div>
+    <div class="drawer-header-actions">
+      <button class="btn btn-sm btn-ghost" id="drawer-edit-btn">Edit</button>
+      <button class="btn btn-sm btn-danger" id="drawer-delete-btn">Delete</button>
+      <button class="drawer-close" id="close-drawer" aria-label="Close">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="drawer-tabs">
+    <button class="dtab active" data-tab="bio">Bio Data</button>
+    <button class="dtab" data-tab="medical">Medical</button>
+    <button class="dtab" data-tab="visits">Visit History</button>
+    <button class="dtab" data-tab="contact">Contact</button>
+  </div>
+
+  <div class="drawer-content">
+    <!-- BIO TAB -->
+    <div class="dtab-panel active" id="tab-bio">
+      <div class="bio-grid" id="bio-grid"></div>
+    </div>
+    <!-- MEDICAL TAB -->
+    <div class="dtab-panel" id="tab-medical">
+      <div class="bio-grid" id="medical-grid"></div>
+    </div>
+    <!-- VISITS TAB -->
+    <div class="dtab-panel" id="tab-visits">
+      <div class="visits-header">
+        <span class="visits-count" id="visits-count">0 visits</span>
+        <button class="btn btn-sm btn-primary" id="add-visit-btn">+ Log Visit</button>
+      </div>
+      <div class="visit-timeline" id="visit-timeline">
+        <div class="empty-visits">No visits recorded yet.</div>
+      </div>
+    </div>
+    <!-- CONTACT TAB -->
+    <div class="dtab-panel" id="tab-contact">
+      <div class="bio-grid" id="contact-grid"></div>
+    </div>
+  </div>
+</aside>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- MODAL: LOG VISIT                           -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="modal-overlay" id="visit-modal">
+  <div class="modal modal-sm" role="dialog">
+    <div class="modal-header">
+      <h2 class="modal-title">Log Visit</h2>
+      <button class="modal-close" id="close-visit-modal">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <form id="visit-form" novalidate>
+        <input type="hidden" id="visit-patient-id" />
+        <div class="form-group">
+          <label>Visit Date & Time *</label>
+          <input type="datetime-local" id="v-datetime" name="visit_date" required />
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Visit Type</label>
+            <select id="v-type" name="visit_type">
+              <option>OPD</option><option>Emergency</option><option>Follow-up</option>
+              <option>Consultation</option><option>Procedure</option><option>Lab Test</option>
+              <option>Vaccination</option><option>Walk-in</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Doctor</label>
+            <input type="text" id="v-doctor" name="doctor" placeholder="Dr. Name" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Complaint / Reason</label>
+          <textarea id="v-complaint" name="complaint" rows="2" placeholder="Chief complaint…"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Diagnosis</label>
+          <textarea id="v-diagnosis" name="diagnosis" rows="2" placeholder="Diagnosis notes…"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Prescription / Treatment</label>
+          <textarea id="v-prescription" name="prescription" rows="2" placeholder="Medications, instructions…"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Follow-up Date</label>
+          <input type="date" id="v-followup" name="follow_up_date" />
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea id="v-notes" name="notes" rows="2" placeholder="Any additional notes…"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" id="cancel-visit">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Visit</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- CONFIRM DIALOG -->
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-box">
+    <div class="confirm-icon">🗑️</div>
+    <h3 id="confirm-title">Delete Patient?</h3>
+    <p id="confirm-msg">This will permanently delete the patient and all visit history. This cannot be undone.</p>
+    <div class="confirm-actions">
+      <button class="btn btn-ghost" id="confirm-cancel">Cancel</button>
+      <button class="btn btn-danger" id="confirm-ok">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script src="add-pandc.js"></script>
+</body>
+</html>

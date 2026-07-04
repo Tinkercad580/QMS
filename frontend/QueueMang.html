@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Queue Management</title>
+  <link rel="stylesheet" href="QueueMang.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
+</head>
+
+<body>
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <svg class="topbar-logo" viewBox="0 0 32 32" fill="none">
+        <rect width="32" height="32" rx="8" fill="#2563EB" />
+        <path d="M8 10h16M8 16h10M8 22h13" stroke="white" stroke-width="2" stroke-linecap="round" />
+      </svg>
+      <span class="topbar-title">QueueBase</span>
+      <span class="topbar-badge" id="tenant-badge">Live</span>
+    </div>
+    <div class="topbar-right">
+      <div class="topbar-clock" id="topbar-clock">--:-- --</div>
+      <a href="/patients" class="btn btn-ghost btn-sm">← Patients</a>
+      <button class="btn btn-primary" id="open-walkin-btn">
+        <svg viewBox="0 0 20 20" fill="none">
+          <path d="M10 4v12M4 10h12" stroke="white" stroke-width="2" stroke-linecap="round" />
+        </svg>
+        Walk-in
+      </button>
+      <button class="btn btn-secondary" id="open-appt-btn">
+        <svg viewBox="0 0 20 20" fill="none">
+          <rect x="3" y="4" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.5" />
+          <path d="M7 2v3M13 2v3M3 9h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+        </svg>
+        Appointment
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <div class="layout">
+
+    <!-- LEFT: STATS + LIVE QUEUE -->
+    <div class="main-col">
+
+      <!-- STATS ROW -->
+      <div class="stats-row" id="stats-row">
+        <div class="stat-card" id="sc-total">
+          <div class="stat-icon blue"><svg viewBox="0 0 24 24" fill="none">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="1.8" />
+              <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="1.8" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="1.8"
+                stroke-linecap="round" />
+            </svg></div>
+          <div class="stat-info"><span class="stat-val" id="s-total">0</span><span class="stat-lbl">Today Total</span>
+          </div>
+        </div>
+        <div class="stat-card" id="sc-waiting">
+          <div class="stat-icon orange"><svg viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" />
+              <path d="M12 7v5l3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg></div>
+          <div class="stat-info"><span class="stat-val" id="s-waiting">0</span><span class="stat-lbl">Waiting</span>
+          </div>
+        </div>
+        <div class="stat-card" id="sc-serving">
+          <div class="stat-icon green"><svg viewBox="0 0 24 24" fill="none">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" stroke="currentColor" stroke-width="1.8"
+                stroke-linecap="round" />
+              <path d="M22 4L12 14.01l-3-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg></div>
+          <div class="stat-info"><span class="stat-val" id="s-serving">0</span><span class="stat-lbl">In Service</span>
+          </div>
+        </div>
+        <div class="stat-card" id="sc-done">
+          <div class="stat-icon teal"><svg viewBox="0 0 24 24" fill="none">
+              <path d="M9 12l2 2 4-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" stroke="currentColor" stroke-width="1.8"
+                stroke-linecap="round" stroke-linejoin="round" />
+            </svg></div>
+          <div class="stat-info"><span class="stat-val" id="s-done">0</span><span class="stat-lbl">Completed</span>
+          </div>
+        </div>
+        <div class="stat-card" id="sc-revenue">
+          <div class="stat-icon purple"><svg viewBox="0 0 24 24" fill="none">
+              <line x1="12" y1="1" x2="12" y2="23" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" stroke-width="1.8"
+                stroke-linecap="round" />
+            </svg></div>
+          <div class="stat-info"><span class="stat-val" id="s-revenue">₹0</span><span class="stat-lbl">Today
+              Revenue</span></div>
+        </div>
+        <div class="stat-card" id="sc-noshow">
+          <div class="stat-icon red"><svg viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" />
+              <path d="M15 9l-6 6M9 9l6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg></div>
+          <div class="stat-info"><span class="stat-val" id="s-noshow">0</span><span class="stat-lbl">No-show</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- QUEUE TOOLBAR -->
+      <div class="queue-toolbar">
+        <div class="toolbar-left">
+          <span class="section-title">Live Queue</span>
+          <span class="queue-badge" id="queue-count-badge">0 in queue</span>
+        </div>
+        <div class="toolbar-right">
+          <button class="btn btn-start-queue" id="start-queue-btn">
+            <svg viewBox="0 0 20 20" fill="none" width="15" height="15">
+              <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.5" />
+              <path d="M8 7l5 3-5 3V7z" fill="currentColor" />
+            </svg>
+            Start Queue
+          </button>
+          <select class="filter-select" id="filter-status">
+            <option value="">All Status</option>
+            <option value="WAITING">Waiting</option>
+            <option value="CALLED">Called</option>
+            <option value="SERVING">Serving</option>
+            <option value="DONE">Done</option>
+            <option value="NOSHOW">No-show</option>
+            <option value="MISSED">Missed</option>
+          </select>
+          <select class="filter-select" id="filter-type">
+            <option value="">All Types</option>
+            <option value="WALKIN">Walk-in</option>
+            <option value="APPOINTMENT">Appointment</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" id="refresh-queue-btn">
+            <svg viewBox="0 0 20 20" fill="none">
+              <path d="M4 10a6 6 0 0 1 6-6 6 6 0 0 1 4.24 1.76L16 8h-4" stroke="currentColor" stroke-width="1.5"
+                stroke-linecap="round" />
+              <path d="M16 10a6 6 0 0 1-6 6 6 6 0 0 1-4.24-1.76L4 12h4" stroke="currentColor" stroke-width="1.5"
+                stroke-linecap="round" />
+            </svg>
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- QUEUE LIST -->
+      <div class="queue-list" id="queue-list">
+        <div class="empty-queue">
+          <svg viewBox="0 0 64 64" fill="none">
+            <rect x="8" y="16" width="48" height="36" rx="4" stroke="#cbd5e1" stroke-width="2" />
+            <path d="M20 28h24M20 36h16" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round" />
+          </svg>
+          <p>No queue entries today. Add a walk-in or appointment.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: CALENDAR + UPCOMING -->
+    <div class="side-col">
+
+      <!-- MINI CALENDAR -->
+      <div class="calendar-card">
+        <div class="cal-header">
+          <button class="cal-nav" id="cal-prev">‹</button>
+          <span class="cal-month" id="cal-month-label">June 2026</span>
+          <button class="cal-nav" id="cal-next">›</button>
+        </div>
+        <div class="cal-weekdays">
+          <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+      </div>
+
+      <!-- APPOINTMENTS FOR SELECTED DATE -->
+      <div class="appt-panel">
+        <div class="appt-panel-header">
+          <span class="appt-panel-title" id="appt-date-label">Today's Appointments</span>
+          <span class="appt-badge" id="appt-count-badge">0</span>
+        </div>
+        <div class="appt-list" id="appt-list">
+          <div class="empty-appt">No appointments for this date.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- MODAL: ADD WALK-IN                      -->
+  <!-- ════════════════════════════════════════ -->
+  <div class="modal-overlay" id="walkin-modal">
+    <div class="modal" role="dialog">
+      <div class="modal-header">
+        <div>
+          <h2 class="modal-title">Add Walk-in</h2>
+          <p class="modal-sub">Search existing patient or enter quick details</p>
+        </div>
+        <button class="modal-close" id="close-walkin">
+          <svg viewBox="0 0 20 20" fill="none">
+            <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <!-- Patient search -->
+        <div class="patient-search-wrap">
+          <label class="form-label">Search Existing Patient</label>
+          <div class="psearch-box">
+            <svg viewBox="0 0 20 20" fill="none" class="psearch-icon">
+              <circle cx="9" cy="9" r="6" stroke="#94a3b8" stroke-width="1.5" />
+              <path d="M15 15l-3-3" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+            <input type="text" id="walkin-patient-search" placeholder="Name, mobile, or patient ID…"
+              autocomplete="off" />
+          </div>
+          <div class="patient-search-results" id="walkin-search-results"></div>
+          <div class="selected-patient-chip" id="selected-patient-chip" style="display:none">
+            <span id="selected-patient-name">—</span>
+            <button type="button" id="clear-selected-patient">✕</button>
+          </div>
+        </div>
+
+        <div class="form-divider"><span>or enter manually</span></div>
+
+        <form id="walkin-form" novalidate>
+          <input type="hidden" id="wf-patient-id" />
+          <div class="form-grid">
+            <div class="form-group required">
+              <label>Name *</label>
+              <input type="text" id="wf-name" name="patient_name" placeholder="Full name" />
+              <span class="field-error" id="wf-err-name"></span>
+            </div>
+            <div class="form-group">
+              <label>Mobile</label>
+              <input type="tel" id="wf-mobile" name="mobile" placeholder="+91 …" />
+            </div>
+            <div class="form-group">
+              <label>Visit Type</label>
+              <select id="wf-visit-type" name="visit_type">
+                <option>OPD</option>
+                <option>Emergency</option>
+                <option>Follow-up</option>
+                <option>Consultation</option>
+                <option>Procedure</option>
+                <option>Lab Test</option>
+                <option>Vaccination</option>
+                <option>Walk-in</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Doctor</label>
+              <input type="text" id="wf-doctor" name="doctor" placeholder="Dr. Name" />
+            </div>
+            <div class="form-group">
+              <label>Priority</label>
+              <select id="wf-priority" name="priority">
+                <option value="NORMAL">Normal</option>
+                <option value="VIP">VIP</option>
+                <option value="EMERGENCY">Emergency 🚨</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Fee (₹)</label>
+              <input type="number" id="wf-fee" name="fee" placeholder="0" min="0" />
+            </div>
+            <div class="form-group full-width">
+              <label>Chief Complaint</label>
+              <textarea id="wf-complaint" name="chief_complaint" rows="2" placeholder="Reason for visit…"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Queue Start Time</label>
+              <input type="time" id="wf-start-time" name="start_time" />
+            </div>
+            <div class="form-group">
+              <label>Queue End Time</label>
+              <input type="time" id="wf-end-time" name="end_time" />
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="cancel-walkin">Cancel</button>
+            <button type="submit" class="btn btn-primary">
+              <svg viewBox="0 0 20 20" fill="none">
+                <path d="M10 4v12M4 10h12" stroke="white" stroke-width="2" stroke-linecap="round" />
+              </svg>
+              Add to Queue
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- MODAL: ADD APPOINTMENT                  -->
+  <!-- ════════════════════════════════════════ -->
+  <div class="modal-overlay" id="appt-modal">
+    <div class="modal" role="dialog">
+      <div class="modal-header">
+        <div>
+          <h2 class="modal-title">Book Appointment</h2>
+          <p class="modal-sub">Schedule for existing or new patient</p>
+        </div>
+        <button class="modal-close" id="close-appt">
+          <svg viewBox="0 0 20 20" fill="none">
+            <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <!-- Big calendar for date selection -->
+        <div class="big-cal-wrap">
+          <div class="big-cal-header">
+            <button class="cal-nav" id="appt-cal-prev">‹</button>
+            <span class="cal-month" id="appt-cal-label">June 2026</span>
+            <button class="cal-nav" id="appt-cal-next">›</button>
+          </div>
+          <div class="big-cal-weekdays">
+            <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+          </div>
+          <div class="big-cal-grid" id="appt-cal-grid"></div>
+          <div class="selected-date-label">Selected: <strong id="appt-selected-date-label">—</strong></div>
+        </div>
+
+        <!-- Patient search same as walk-in -->
+        <div class="patient-search-wrap" style="margin-top:16px">
+          <label class="form-label">Search Existing Patient</label>
+          <div class="psearch-box">
+            <svg viewBox="0 0 20 20" fill="none" class="psearch-icon">
+              <circle cx="9" cy="9" r="6" stroke="#94a3b8" stroke-width="1.5" />
+              <path d="M15 15l-3-3" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+            <input type="text" id="appt-patient-search" placeholder="Name, mobile, or patient ID…" autocomplete="off" />
+          </div>
+          <div class="patient-search-results" id="appt-search-results"></div>
+          <div class="selected-patient-chip" id="appt-selected-chip" style="display:none">
+            <span id="appt-selected-name">—</span>
+            <button type="button" id="appt-clear-patient">✕</button>
+          </div>
+        </div>
+
+        <form id="appt-form" novalidate>
+          <input type="hidden" id="af-patient-id" />
+          <input type="hidden" id="af-date" />
+          <div class="form-grid" style="margin-top:14px">
+            <div class="form-group required">
+              <label>Patient Name *</label>
+              <input type="text" id="af-name" name="patient_name" placeholder="Full name" />
+              <span class="field-error" id="af-err-name"></span>
+            </div>
+            <div class="form-group">
+              <label>Mobile</label>
+              <input type="tel" id="af-mobile" name="mobile" placeholder="+91 …" />
+            </div>
+
+            <!-- ── NEW: Slot Range ── -->
+            <!-- ── NEW: 12-Hour Slot Range Dropdowns ── -->
+            <div class="form-group required">
+              <label>Start Time *</label>
+              <div style="display:flex; gap:4px;">
+                <select id="af-start-h" style="padding:8px 4px; flex:1; min-width:0;">
+                  <option>01</option>
+                  <option>02</option>
+                  <option>03</option>
+                  <option>04</option>
+                  <option>05</option>
+                  <option>06</option>
+                  <option>07</option>
+                  <option>08</option>
+                  <option selected>09</option>
+                  <option>10</option>
+                  <option>11</option>
+                  <option>12</option>
+                </select>
+                <span style="display:flex; align-items:center; font-weight:700;">:</span>
+                <select id="af-start-m" style="padding:8px 4px; flex:1; min-width:0;">
+                  <option>00</option>
+                  <option>15</option>
+                  <option>30</option>
+                  <option>45</option>
+                </select>
+                <select id="af-start-ampm" style="padding:8px 4px; flex:1; min-width:0;">
+                  <option>AM</option>
+                  <option>PM</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group required">
+              <label>End Time *</label>
+              <div style="display:flex; gap:4px;">
+                <select id="af-end-h" style="padding:8px 4px; flex:1; min-width:0;">
+                  <option>01</option>
+                  <option>02</option>
+                  <option>03</option>
+                  <option>04</option>
+                  <option>05</option>
+                  <option>06</option>
+                  <option>07</option>
+                  <option>08</option>
+                  <option selected>09</option>
+                  <option>10</option>
+                  <option>11</option>
+                  <option>12</option>
+                </select>
+                <span style="display:flex; align-items:center; font-weight:700;">:</span>
+                <select id="af-end-m" style="padding:8px 4px; flex:1; min-width:0;">
+                  <option>00</option>
+                  <option selected>15</option>
+                  <option>30</option>
+                  <option>45</option>
+                </select>
+                <select id="af-end-ampm" style="padding:8px 4px; flex:1; min-width:0;">
+                  <option>AM</option>
+                  <option>PM</option>
+                </select>
+              </div>
+            </div>
+            <!-- ─────────────────────────────────────── -->
+            <!-- ───────────────────── -->
+
+            <div class="form-group">
+              <label>Doctor</label>
+              <input type="text" id="af-doctor" name="doctor" placeholder="Dr. Name" />
+            </div>
+            <div class="form-group">
+              <label>Visit Type</label>
+              <select id="af-visit-type" name="visit_type">
+                <option>Consultation</option>
+                <option>OPD</option>
+                <option>Follow-up</option>
+                <option>Procedure</option>
+                <option>Lab Test</option>
+                <option>Vaccination</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Priority</label>
+              <select id="af-priority" name="priority">
+                <option value="NORMAL">Normal</option>
+                <option value="VIP">VIP</option>
+                <option value="EMERGENCY">Emergency 🚨</option>
+              </select>
+            </div>
+            <div class="form-group full-width">
+              <label>Notes</label>
+              <textarea id="af-notes" name="notes" rows="2" placeholder="Appointment notes…"></textarea>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="cancel-appt">Cancel</button>
+            <button type="submit" class="btn btn-secondary">Book Appointment</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- MODAL: SERVE / COMPLETE                 -->
+  <!-- ════════════════════════════════════════ -->
+  <div class="modal-overlay" id="serve-modal">
+    <div class="modal modal-sm" role="dialog">
+      <div class="modal-header">
+        <div>
+          <h2 class="modal-title" id="serve-modal-title">Complete Service</h2>
+          <p class="modal-sub" id="serve-modal-sub">Update visit outcome and payment</p>
+        </div>
+        <button class="modal-close" id="close-serve">
+          <svg viewBox="0 0 20 20" fill="none">
+            <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form id="serve-form">
+          <input type="hidden" id="sf-queue-id" />
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Outcome</label>
+              <select id="sf-status" name="status">
+                <option value="DONE">✅ Done / Served</option>
+                <option value="NOSHOW">❌ No-show</option>
+                <option value="MISSED">⏭ Missed → Move to End</option>
+                <option value="SERVING">🔄 Still Serving</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Amount Paid (₹)</label>
+              <input type="number" id="sf-amount" name="amount_paid" placeholder="0" min="0" />
+            </div>
+            <div class="form-group full-width">
+              <label>Diagnosis / Notes</label>
+              <textarea id="sf-notes" name="notes" rows="2" placeholder="Quick notes…"></textarea>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="cancel-serve">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save & Update</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- CONFIRM -->
+  <div class="confirm-overlay" id="confirm-overlay">
+    <div class="confirm-box">
+      <div class="confirm-icon" id="confirm-icon">🗑️</div>
+      <h3 id="confirm-title">Confirm</h3>
+      <p id="confirm-msg">Are you sure?</p>
+      <div class="confirm-actions">
+        <button class="btn btn-ghost" id="confirm-cancel">Cancel</button>
+        <button class="btn btn-danger" id="confirm-ok">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="QueueMang.js"></script>
+</body>
+
+</html>
