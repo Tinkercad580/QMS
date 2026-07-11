@@ -546,3 +546,89 @@ ul { list-style: none; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+/* ─── RESPONSIVE BREAKPOINTS ─────────────────────────────── */
+
+@media (max-width: 900px) {
+  /* Prevent search from breaking early */
+  .search-input { width: 200px; }
+  .search-input:focus { width: 220px; }
+}
+
+@media (max-width: 768px) {
+  /* --- TOPBAR GENERAL --- */
+  .topbar { padding: 0 12px; gap: 8px; }
+  
+  /* 1. Left Side: Hide "PatientBase" and "Clinic" badge */
+  .topbar-title, 
+  .topbar-badge { display: none !important; }
+  
+  /* 2. Right Side: Responsive Search Bar */
+  .search-wrap { flex: 1; max-width: 180px; min-width: 120px; }
+  .search-input { width: 100%; padding-left: 30px; font-size: 12px; }
+  .search-input:focus { width: 100%; box-shadow: 0 0 0 2px rgba(37,99,235,0.12); } 
+  
+  /* 3. Right Side: Icon-Only Square Buttons */
+  .topbar-right { gap: 8px; }
+  .topbar-right .btn .btn-text { display: none; }
+  .topbar-right .btn { padding: 0; width: 34px; height: 34px; justify-content: center; }
+  .topbar-right .btn svg { margin: 0; width: 16px; height: 16px; }
+  
+  /* --- PAGE CONTENT LAYOUT --- */
+  .layout { padding: 14px 14px 40px; }
+  .form-grid { grid-template-columns: 1fr; }
+  .bio-grid { grid-template-columns: 1fr; }
+  .stats-bar { gap: 8px; }
+  .stat-chip { padding: 10px 14px; min-width: 100px; }
+  .patient-drawer { width: 100%; }
+  
+  /* --- TABLE TOOLBAR RESPONSIVE --- */
+  .table-toolbar { 
+    flex-direction: column; 
+    align-items: stretch; 
+    padding: 12px 14px; 
+    gap: 12px; 
+  }
+  .toolbar-left { 
+    width: 100%; 
+    justify-content: space-between; /* Puts Title on left, count on right */
+  }
+  .toolbar-right { 
+    width: 100%; 
+    display: flex; 
+    flex-wrap: wrap; 
+    gap: 8px; 
+  }
+  .filter-select { 
+    flex: 1; /* Makes dropdowns stretch equally */
+    min-width: 120px; 
+  }
+}
+
+@media (max-width: 480px) {
+  /* Further compression for tiny mobile screens */
+  .topbar { padding: 0 8px; }
+  
+  .search-wrap { max-width: 120px; }
+  .search-input { padding: 0 8px 0 26px; font-size: 11px; }
+  .search-icon { left: 8px; width: 14px; height: 14px; }
+  
+  .topbar-right { gap: 4px; }
+  .topbar-right .btn { width: 32px; height: 32px; }
+
+  /* --- TINY SCREEN TABLE TOOLBAR --- */
+  .toolbar-right {
+    display: grid; 
+    grid-template-columns: 1fr 1fr; /* Put dropdowns side-by-side */
+    gap: 8px;
+  }
+  .filter-select {
+    min-width: 0; /* Prevents overflow if screen is very narrow */
+    font-size: 11px;
+    padding-left: 8px;
+  }
+  #refresh-btn {
+    grid-column: 1 / -1; /* Makes the refresh button span the full width of the grid */
+    justify-content: center;
+  }
+}

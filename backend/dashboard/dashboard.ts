@@ -4,7 +4,7 @@ import DynamicDatabaseService from '../../database_Manager/database.service';
 import { QUEUE_SCHEMA, PATIENT_SCHEMA } from '../../database_Manager/database.schemas';
 
 const router = Router();
-const queueDb   = DynamicDatabaseService.getDatabase('queue',    QUEUE_SCHEMA);
+const queueDb = DynamicDatabaseService.getDatabase('queue', QUEUE_SCHEMA);
 const patientDb = DynamicDatabaseService.getDatabase('patients', PATIENT_SCHEMA);
 
 // ─── HELPER ──────────────────────────────────────────────────
@@ -26,19 +26,21 @@ router.get('/kpi', (req: Request, res: Response) => {
     if (!from || !to) return res.status(400).json({ success: false, message: 'from and to required' });
 
     // Queue stats (fee, collected, walkins, done, noshow, missed, waiting)
+    // Queue stats (fee, collected, walkins, done, noshow, missed, waiting)
     const queueStats = queueDb.query(`
       SELECT
-        COUNT(*)                                              AS total_queue,
-        SUM(fee)                                              AS total_fee,
-        SUM(amount_paid)                                      AS total_collected,
-        SUM(CASE WHEN ticket_type = 'WALKIN'        THEN 1 ELSE 0 END) AS total_walkins,
-        SUM(CASE WHEN status = 'DONE'               THEN 1 ELSE 0 END) AS total_done,
-        SUM(CASE WHEN status = 'NOSHOW'             THEN 1 ELSE 0 END) AS total_noshow,
-        SUM(CASE WHEN status = 'MISSED'             THEN 1 ELSE 0 END) AS total_missed,
-        SUM(CASE WHEN status IN ('WAITING','CALLED','SERVING') THEN 1 ELSE 0 END) AS total_waiting
+      COUNT(*) AS total_queue,
+      SUM(fee) AS total_fee,
+      SUM(amount_paid) AS total_collected,
+      SUM(CASE WHEN ticket_type = 'WALKIN' THEN 1 ELSE 0 END) AS total_walkins,
+      SUM(CASE WHEN ticket_type = 'APPOINTMENT' THEN 1 ELSE 0 END) AS total_checked_in_appts,
+      SUM(CASE WHEN status = 'DONE' THEN 1 ELSE 0 END) AS total_done,
+      SUM(CASE WHEN status = 'NOSHOW' THEN 1 ELSE 0 END) AS total_noshow,
+      SUM(CASE WHEN status = 'MISSED' THEN 1 ELSE 0 END) AS total_missed,
+      SUM(CASE WHEN status IN ('WAITING','CALLED','SERVING') THEN 1 ELSE 0 END) AS total_waiting
       FROM queue_entries
       WHERE queue_date BETWEEN ? AND ?
-    `, [from, to]) as any[];
+      `, [from, to]) as any[];
 
     // Appointment count
     const apptStats = queueDb.query(`
@@ -75,19 +77,21 @@ router.get('/kpi', (req: Request, res: Response) => {
 
     const q = queueStats[0] || {};
     const data = {
-      total_queue:        q.total_queue        || 0,
-      total_fee:          q.total_fee          || 0,
-      total_collected:    q.total_collected    || 0,
-      total_walkins:      q.total_walkins      || 0,
-      total_done:         q.total_done         || 0,
-      total_noshow:       q.total_noshow       || 0,
-      total_missed:       q.total_missed       || 0,
-      total_waiting:      q.total_waiting      || 0,
+      total_queue: q.total_queue || 0,
+      total_fee: q.total_fee || 0,
+      total_collected: q.total_collected || 0,
+      total_walkins: q.total_walkins || 0,
+      total_checked_in_appts: q.total_checked_in_appts || 0,
+      total_footfall: (q.total_walkins || 0) + (q.total_checked_in_appts || 0), // NEW: actual people seen today
+      total_done: q.total_done || 0,
+      total_noshow: q.total_noshow || 0,
+      total_missed: q.total_missed || 0,
+      total_waiting: q.total_waiting || 0,
       total_appointments: apptStats[0]?.total_appointments || 0,
-      total_sms:          smsStats[0]?.total_sms           || 0,
-      total_patients:     patientTotal[0]?.total_patients  || 0,
-      new_patients:       newPatients[0]?.new_patients     || 0,
-      total_visits:       visitStats[0]?.total_visits      || 0, // Restored to distinct medical visits
+      total_sms: smsStats[0]?.total_sms || 0,
+      total_patients: patientTotal[0]?.total_patients || 0,
+      new_patients: newPatients[0]?.new_patients || 0,
+      total_visits: visitStats[0]?.total_visits || 0, // Restored to distinct medical visits
     };
 
     res.json({ success: true, data });
@@ -121,11 +125,11 @@ router.get('/trend', (req: Request, res: Response) => {
 
     // Build human-friendly labels
     const data = rows.map(r => ({
-      label:   group === 'day'   ? r.period.slice(5)  // "MM-DD"
-             : group === 'month' ? r.period            // "YYYY-MM"
-             : r.period,                               // "YYYY-Www"
+      label: group === 'day' ? r.period.slice(5)  // "MM-DD"
+        : group === 'month' ? r.period            // "YYYY-MM"
+          : r.period,                               // "YYYY-Www"
       revenue: r.revenue || 0,
-      visits:  r.visits  || 0,
+      visits: r.visits || 0,
     }));
 
     res.json({ success: true, data });
@@ -217,18 +221,24 @@ router.get('/day', (req: Request, res: Response) => {
 
     // 1. Queue stats: Calculate Revenue, Collected, Pending, etc.
     const stats = queueDb.query(`
-      SELECT
-        SUM(fee)                                              AS revenue,
-        SUM(amount_paid)                                      AS collected,
-        SUM(fee - amount_paid)                                AS pending,
-        COUNT(DISTINCT patient_id)                            AS patients,
-        SUM(CASE WHEN ticket_type = 'APPOINTMENT' THEN 1 ELSE 0 END) AS appointments,
-        SUM(CASE WHEN ticket_type = 'WALKIN'      THEN 1 ELSE 0 END) AS walkins,
-        SUM(CASE WHEN status = 'DONE'             THEN 1 ELSE 0 END) AS done,
-        SUM(CASE WHEN status IN ('NOSHOW','MISSED') THEN 1 ELSE 0 END) AS noshow
-      FROM queue_entries
-      WHERE queue_date = ?
-    `, [date]) as any[];
+SELECT
+SUM(fee) AS revenue,
+SUM(amount_paid) AS collected,
+SUM(fee - amount_paid) AS pending,
+SUM(CASE WHEN ticket_type = 'WALKIN' THEN 1 ELSE 0 END) AS pure_walkins,
+COUNT(*) AS footfall,
+SUM(CASE WHEN status = 'DONE' THEN 1 ELSE 0 END) AS done,
+SUM(CASE WHEN status IN ('NOSHOW','MISSED') THEN 1 ELSE 0 END) AS noshow
+FROM queue_entries
+WHERE queue_date = ?
+`, [date]) as any[];
+
+    // Correct total appointments booked for this date (regardless of check-in status)
+    const apptCountForDay = queueDb.query(`
+SELECT COUNT(*) AS total
+FROM appointments
+WHERE appt_date = ?
+`, [date]) as any[];
 
     // 2. New Registrations: Count patients registered on this specific date (with IST fix)
     const newReg = patientDb.query(`
@@ -238,33 +248,42 @@ router.get('/day', (req: Request, res: Response) => {
     `, [date]) as any[];
 
     // 3. Get all entries
+    // 3. Get all entries
     const entries = queueDb.query(`
-      SELECT
+        SELECT
         id, token_number, patient_id, patient_name, mobile,
         ticket_type, visit_type, doctor, priority, status,
         fee, amount_paid, chief_complaint, slot_time,
         called_at, served_at, notes
-      FROM queue_entries
-      WHERE queue_date = ?
-      ORDER BY
+        FROM queue_entries
+        WHERE queue_date = ?
+        ORDER BY
         CASE priority WHEN 'EMERGENCY' THEN 0 WHEN 'VIP' THEN 1 ELSE 2 END ASC,
         token_number ASC
+      `, [date]) as any[];
+
+    // 3b. Appointments booked for this date but NEVER checked into the queue
+    const noShowAppointments = queueDb.query(`
+        SELECT id, patient_id, patient_name, mobile, slot_time, doctor, visit_type, priority, fee, status
+        FROM appointments
+        WHERE appt_date = ? AND status = 'WAITING'
+        ORDER BY slot_time ASC
     `, [date]) as any[];
 
     const s = stats[0] || {};
     res.json({
       success: true,
       data: {
-        revenue:      s.revenue      || 0,
-        collected:    s.collected    || 0,
-        pending:      s.pending      || 0, // Now includes calculated pending
-        patients:     s.patients     || 0,
-        appointments: s.appointments || 0,
-        walkins:      s.walkins      || 0,
-        done:         s.done         || 0,
-        noshow:       s.noshow       || 0,
-        new_reg:      newReg[0]?.count || 0, // Added new registration count
+        revenue: s.revenue || 0,
+        collected: s.collected || 0,
+        pending: s.pending || 0,
+        appointments: apptCountForDay[0]?.total || 0, // now = ALL bookings for the day
+        walkins: s.footfall || 0, // = actual checked-in footfall
+        done: s.done || 0,
+        noshow: s.noshow || 0,
+        new_reg: newReg[0]?.count || 0,
         entries,
+        no_show_appointments: noShowAppointments,
       }
     });
   } catch (e: any) {

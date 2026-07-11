@@ -2,7 +2,7 @@
 // add-pabdc.js — Patient & Client Registry Frontend
 // ═══════════════════════════════════════════════════════
 
-const API_BASE   = 'http://172.27.23.168:3000';
+const API_BASE   = '';
 const API        = `${API_BASE}/api/patients`;
 const VISITS_API = `${API_BASE}/api/visits`;
 

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FlowDesk — Queue Management</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ========== NAVBAR ========== -->
+  <nav class="navbar" id="navbar">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-logo">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-label="FlowDesk logo">
+          <rect x="2" y="2" width="24" height="24" rx="7" fill="var(--color-primary)" opacity="0.12"/>
+          <circle cx="14" cy="14" r="4" fill="var(--color-primary)"/>
+          <circle cx="14" cy="14" r="9" stroke="var(--color-primary)" stroke-width="1.5" stroke-dasharray="3 3"/>
+          <path d="M14 5v4M14 19v4M5 14h4M19 14h4" stroke="var(--color-primary)" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <span class="nav-logo-text">FlowDesk</span>
+      </a>
+
+      <ul class="nav-links" id="nav-links">
+        <li><a href="index.html" class="nav-link active">Home</a></li>
+        <li><a href="dashboard.html" class="nav-link">Dashboard</a></li>
+        <li><a href="QueueMang.html" class="nav-link">Today's Queue</a></li>
+        <li><a href="add-pandc.html" class="nav-link">Add Patient</a></li>
+      </ul>
+
+      <div class="nav-actions">
+        <button class="icon-btn theme-toggle" data-theme-toggle aria-label="Toggle theme">
+          <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+        <div class="nav-divider"></div>
+        <div class="nav-avatar">SK</div>
+        <button class="hamburger" id="hamburger" aria-label="Open menu">
+          <span></span><span></span><span></span>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ========== HERO ========== -->
+  <section class="hero">
+    <div class="hero-bg-grid"></div>
+    <div class="hero-blob hero-blob-1"></div>
+    <div class="hero-blob hero-blob-2"></div>
+
+    <div class="hero-inner">
+      <div class="hero-eyebrow fade-up" style="--delay:0ms">
+        <span class="eyebrow-dot"></span>
+        Queue Management System
+      </div>
+      <h1 class="hero-title fade-up" style="--delay:80ms">
+        Your waiting room,<br>
+        <em>finally organised.</em>
+      </h1>
+      <p class="hero-subtitle fade-up" style="--delay:160ms">
+        FlowDesk blends walk-in queues, appointments, and real-time
+        notifications into one calm, efficient flow — for clinics, banks,
+        government offices, and beyond.
+      </p>
+      <div class="hero-cta fade-up" style="--delay:240ms">
+        <a href="dashboard.html" class="btn-primary">
+          Open Dashboard
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </a>
+        <a href="queue.html" class="btn-ghost">Today's Queue</a>
+      </div>
+
+      <!-- Live ticker -->
+      <div class="hero-ticker fade-up" style="--delay:320ms">
+        <span class="ticker-dot"></span>
+        <span id="ticker-text">23 patients waiting · Avg wait 28 min · Counter 3 serving A-71</span>
+      </div>
+    </div>
+
+    <!-- Floating card previews -->
+    <div class="hero-cards fade-up" style="--delay:200ms">
+      <div class="preview-card pc-top">
+        <div class="pc-header">
+          <div class="pc-dot green"></div>
+          <span class="pc-label">Now Serving</span>
+        </div>
+        <div class="pc-token">A-71</div>
+        <div class="pc-service">OPD General · Counter 3</div>
+      </div>
+      <div class="preview-card pc-main">
+        <div class="pc-kpi-row">
+          <div class="pc-kpi"><div class="pc-kpi-val">87</div><div class="pc-kpi-label">Served</div></div>
+          <div class="pc-kpi"><div class="pc-kpi-val teal">23</div><div class="pc-kpi-label">Waiting</div></div>
+          <div class="pc-kpi"><div class="pc-kpi-val orange">28m</div><div class="pc-kpi-label">Avg Wait</div></div>
+        </div>
+        <div class="pc-bar-row">
+          <div class="pc-bar-label">OPD General</div>
+          <div class="pc-bar-track"><div class="pc-bar-fill" style="width:72%"></div></div>
+          <div class="pc-bar-val">72%</div>
+        </div>
+        <div class="pc-bar-row">
+          <div class="pc-bar-label">Blood Test</div>
+          <div class="pc-bar-track"><div class="pc-bar-fill orange" style="width:54%"></div></div>
+          <div class="pc-bar-val">54%</div>
+        </div>
+        <div class="pc-bar-row">
+          <div class="pc-bar-label">Pharmacy</div>
+          <div class="pc-bar-track"><div class="pc-bar-fill green" style="width:38%"></div></div>
+          <div class="pc-bar-val">38%</div>
+        </div>
+      </div>
+      <div class="preview-card pc-bottom">
+        <div class="pc-header">
+          <div class="pc-dot orange"></div>
+          <span class="pc-label">Next Up</span>
+        </div>
+        <div class="pc-token" style="font-size:1.4rem">B-43</div>
+        <div class="pc-service">Blood Test · 8 min</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== FEATURES ========== -->
+  <section class="features">
+    <div class="section-inner">
+      <div class="section-header">
+        <p class="section-eyebrow">Everything you need</p>
+        <h2 class="section-title">Three views. One system.</h2>
+      </div>
+
+      <div class="feature-grid">
+
+        <!-- Card 1 -->
+        <a href="dashboard.html" class="feature-card fc-wide">
+          <div class="fc-icon" style="--ic: var(--color-primary)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+          </div>
+          <div class="fc-body">
+            <h3 class="fc-title">Dashboard</h3>
+            <p class="fc-desc">Live KPIs, queue status across all counters, staff activity, and daily performance at a glance.</p>
+          </div>
+          <div class="fc-arrow">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </div>
+          <div class="fc-glow"></div>
+        </a>
+
+        <!-- Card 2 -->
+        <a href="queue.html" class="feature-card">
+          <div class="fc-icon" style="--ic: var(--color-success)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+          </div>
+          <div class="fc-body">
+            <h3 class="fc-title">Today's Queue</h3>
+            <p class="fc-desc">Real-time position, ETA, and status for every patient in today's service queue.</p>
+          </div>
+          <div class="fc-arrow">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </div>
+          <div class="fc-glow"></div>
+        </a>
+
+        <!-- Card 3 -->
+        <a href="add-patient.html" class="feature-card">
+          <div class="fc-icon" style="--ic: var(--color-orange)">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+          </div>
+          <div class="fc-body">
+            <h3 class="fc-title">Add Patient</h3>
+            <p class="fc-desc">Register a walk-in with service type, priority tag, and optional contact — token issued instantly.</p>
+          </div>
+          <div class="fc-arrow">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </div>
+          <div class="fc-glow"></div>
+        </a>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== STATS STRIP ========== -->
+  <section class="stats-strip">
+    <div class="stats-inner">
+      <div class="stat-item">
+        <div class="stat-num" data-count="1200">0</div>
+        <div class="stat-label">Patients served daily</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <div class="stat-num" data-count="98">0</div>
+        <div class="stat-label">% uptime</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <div class="stat-num" data-count="340">0</div>
+        <div class="stat-label">Avg daily queue tokens</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <div class="stat-num" data-count="12">0</div>
+        <div class="stat-label">Service counters</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <a href="index.html" class="nav-logo">
+        <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
+          <rect x="2" y="2" width="24" height="24" rx="7" fill="var(--color-primary)" opacity="0.12"/>
+          <circle cx="14" cy="14" r="4" fill="var(--color-primary)"/>
+          <circle cx="14" cy="14" r="9" stroke="var(--color-primary)" stroke-width="1.5" stroke-dasharray="3 3"/>
+        </svg>
+        <span class="nav-logo-text">FlowDesk</span>
+      </a>
+      <p class="footer-copy">© 2026 FlowDesk. Virtual queue management for every organisation.</p>
+      <div class="footer-links">
+        <a href="dashboard.html">Dashboard</a>
+        <a href="queue.html">Queue</a>
+        <a href="add-patient.html">Add Patient</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

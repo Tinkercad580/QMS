@@ -2,7 +2,7 @@
 // QueueMang.js — Queue Management Frontend
 // ═══════════════════════════════════════════════════════
 
-const API_BASE = 'http://172.27.23.168:3000';
+const API_BASE = '';
 const QUEUE_API = `${API_BASE}/api/queue`;
 const APPT_API = `${API_BASE}/api/appointments`;
 const PAT_API = `${API_BASE}/api/patients`;
@@ -70,16 +70,27 @@ function startClock() {
 }
 
 // ─── LOAD QUEUE ────────────────────────────────────────
+// ─── LOAD QUEUE ────────────────────────────────────────
 async function loadQueue(silent = false) {
   try {
     const res = await fetch(`${QUEUE_API}?date=${today()}`);
+    
+    // 👇 NEW: Check if the server is actually responding!
+    if (!res.ok) {
+      console.error(`HTTP Error: ${res.status} - Server might be down or crashed.`);
+      throw new Error('Server offline or returned an error.');
+    }
+    
     const data = await res.json();
     if (data.success) {
       state.queue = data.queue || [];
       applyQueueFilters();
+    } else {
+      console.error("Backend returned false success:", data.message);
     }
   } catch (e) {
-    if (!silent) toast('error', 'Failed to load queue');
+    console.error("Load Queue Crash Details:", e);
+    if (!silent) toast('error', 'Failed to load queue. Check server terminal!');
   }
 }
 
@@ -227,16 +238,11 @@ function updateQueueButtonState() {
 function queueCardHtml(q, i) {
   const isAppt = q.ticket_type === 'APPOINTMENT';
 
-  // ── NEW: Extract Demographics with Colored Gender ────────
+  // ── Extract Demographics with Colored Gender ────────
   const pat = q.patient_id ? state.allPatients.find(p => String(p.id) === String(q.patient_id)) : null;
   let demoStr = '';
   if (pat) {
-    // 1. Age as Amber Pill
-    const age = pat.age
-      ? `<span style="background:#fffbeb; color:#d97706; border:1px solid #fde68a; padding:1px 6px; border-radius:100px; font-weight:800; font-size:10px; letter-spacing:0.05em;">${pat.age}Y</span>`
-      : '';
-
-    // 2. Gender as Colored Pill
+    const age = pat.age ? `<span style="background:#fffbeb; color:#d97706; border:1px solid #fde68a; padding:1px 6px; border-radius:100px; font-weight:800; font-size:10px; letter-spacing:0.05em;">${pat.age}Y</span>` : '';
     let genderStr = '';
     if (pat.gender) {
       const g = pat.gender.charAt(0).toUpperCase();
@@ -245,59 +251,49 @@ function queueCardHtml(q, i) {
       const gBorder = g === 'M' ? '#bfdbfe' : (g === 'F' ? '#fbcfe8' : '#ddd6fe');
       genderStr = `<span style="color:${gColor}; background:${gBg}; border:1px solid ${gBorder}; padding:1px 6px; border-radius:100px; font-weight:800; font-size:10px;">${g}</span>`;
     }
-
-    // Combine them side-by-side
     if (age || genderStr) {
       demoStr = `<span style="display:inline-flex; align-items:center; gap:4px; margin-left:8px;">${age}${genderStr}</span>`;
     }
   }
   // ───────────────────────────────────────────────────────
 
-  // ── Custom SVG action buttons (NO emojis) ──────────────
+  // ── Custom SVG action buttons ──────────────
   let actions = '';
 
   const btnCall = `
     <button class="qbtn qbtn-call" data-action="call" data-id="${q.id}" title="Call Patient">
-      <svg viewBox="0 0 18 18" fill="none">
-        <path d="M3 5a2 2 0 0 1 2-2h1.5a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H5.5A3.5 3.5 0 0 0 9 10.5h0a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 .5.5V12a2 2 0 0 1-2 2C6.134 14 3 10.866 3 7V5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-      </svg>
+      <svg viewBox="0 0 18 18" fill="none"><path d="M3 5a2 2 0 0 1 2-2h1.5a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H5.5A3.5 3.5 0 0 0 9 10.5h0a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 .5.5V12a2 2 0 0 1-2 2C6.134 14 3 10.866 3 7V5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
     </button>`;
 
   const btnSkip = `
     <button class="qbtn qbtn-skip" data-action="miss" data-id="${q.id}" title="Mark Missed">
-      <svg viewBox="0 0 18 18" fill="none">
-        <path d="M4 9h7M14 6l-3 3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
+      <svg viewBox="0 0 18 18" fill="none"><path d="M4 9h7M14 6l-3 3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>`;
 
   const btnRemove = `
     <button class="qbtn qbtn-del" data-action="remove" data-id="${q.id}" title="Remove from Queue">
-      <svg viewBox="0 0 18 18" fill="none">
-        <path d="M3 5h12M7 5V3h4v2M6 5v9a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V5H6z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
+      <svg viewBox="0 0 18 18" fill="none"><path d="M3 5h12M7 5V3h4v2M6 5v9a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1V5H6z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>`;
 
   const btnDone = `
     <button class="qbtn qbtn-done" data-action="complete" data-id="${q.id}" title="Complete / Mark Done">
-      <svg viewBox="0 0 18 18" fill="none">
-        <path d="M4 9.5l3.5 3.5 6.5-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
+      <svg viewBox="0 0 18 18" fill="none"><path d="M4 9.5l3.5 3.5 6.5-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>`;
 
   const btnNoshow = `
     <button class="qbtn qbtn-noshow" data-action="noshow" data-id="${q.id}" title="Mark No-show">
-      <svg viewBox="0 0 18 18" fill="none">
-        <circle cx="9" cy="9" r="6.5" stroke="currentColor" stroke-width="1.5"/>
-        <path d="M6 12l6-6M12 12L6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-      </svg>
+      <svg viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M6 12l6-6M12 12L6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     </button>`;
 
+  // 👇 The missing btnRequeue is back! 👇
   const btnRequeue = `
     <button class="qbtn qbtn-requeue" data-action="requeue" data-id="${q.id}" title="Re-queue at End">
-      <svg viewBox="0 0 18 18" fill="none">
-        <path d="M2 9a7 7 0 1 0 7-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        <path d="M2 5v4h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
+      <svg viewBox="0 0 18 18" fill="none"><path d="M2 9a7 7 0 1 0 7-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M2 5v4h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>`;
+
+  const btnReopen = `
+    <button class="qbtn qbtn-call" style="background:#eff6ff; color:#2563eb;" data-action="complete" data-id="${q.id}" title="View Details / Book Follow-up">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>`;
 
   if (q.status === 'WAITING') {
@@ -306,6 +302,8 @@ function queueCardHtml(q, i) {
     actions = btnDone + btnNoshow;
   } else if (q.status === 'MISSED') {
     actions = btnRequeue + btnRemove;
+  } else if (q.status === 'DONE' || q.status === 'NOSHOW') {
+    actions = btnReopen; 
   }
 
   const priorityTag = q.priority !== 'NORMAL'
@@ -603,6 +601,7 @@ function bindEvents() {
 
   // Queue list actions (delegated)
   // Queue list actions (delegated)
+ // Queue list actions (delegated)
   $('queue-list').addEventListener('click', e => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
@@ -612,13 +611,22 @@ function bindEvents() {
 
     if (act === 'call') callPatient(id);
 
-    // ── UPGRADED: Small "Done" button auto-advances the queue
+    // 👇 CRITICAL FIX: Differentiate between "Serving" and "Editing" 👇
     if (act === 'complete') {
-      state.autoCallNext = true;
+      const entry = state.queue.find(q => q.id === id);
+      
+      // ONLY auto-advance the queue if we are finishing a currently active patient.
+      // If they are already DONE, NOSHOW, or MISSED, we are just editing their record.
+      if (entry && (entry.status === 'CALLED' || entry.status === 'SERVING')) {
+        state.autoCallNext = true;
+      } else {
+        state.autoCallNext = false;
+      }
+      
       openServeModal(id);
     }
+    // 👆 END CRITICAL FIX 👆
 
-    // ── UPGRADED: Small "No-show" button auto-advances the queue
     // ── UPGRADED: Small "No-show" button auto-advances without flickering
     if (act === 'noshow') {
       // 1. Turn on the memory flag BEFORE we process the no-show so the button stays blue
@@ -692,6 +700,72 @@ function bindEvents() {
     state.pendingConfirm = null;
   });
 
+// 👇 Instant Follow-up Booking Logic 👇
+  const bookFollowupBtn = $('btn-book-followup');
+  if (bookFollowupBtn) {
+    bookFollowupBtn.addEventListener('click', async () => {
+      const dateField = $('sf-followup');
+      const dateVal = dateField.value;
+      if (!dateVal) return toast('warning', 'Please select a date first');
+
+      const selectedDate = new Date(dateVal);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (selectedDate < today) {
+        return toast('error', 'You cannot book an appointment in the past!');
+      }
+
+      const queueId = parseInt($('sf-queue-id').value);
+      const entry = state.queue.find(q => q.id === queueId);
+
+      if (!entry || !entry.patient_id) {
+        return toast('error', 'Cannot book: Patient ID is missing. Is this an unregistered walk-in?');
+      }
+
+      try {
+        bookFollowupBtn.disabled = true;
+        bookFollowupBtn.textContent = 'Booking...';
+        dateField.disabled = true;
+
+        const res = await fetch(APPT_API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            patient_id: entry.patient_id,
+            patient_name: entry.patient_name,
+            mobile: entry.mobile,
+            appt_date: dateVal,
+            visit_type: 'Follow-up',
+            doctor: entry.doctor,
+            notes: 'Auto-scheduled follow-up from previous visit.'
+          })
+        });
+
+        const result = await res.json();
+        if (result.success) {
+          toast('success', `📅 Follow-up booked for ${new Date(dateVal).toLocaleDateString()}`);
+          
+          // 👇 NEW: Force local state to remember the date immediately!
+          entry.follow_up_date = dateVal;
+
+          bookFollowupBtn.textContent = 'Booked!';
+          dateField.disabled = true;
+        } else {
+          toast('error', result.message || 'Failed to book');
+          bookFollowupBtn.disabled = false;
+          bookFollowupBtn.textContent = 'Book';
+          dateField.disabled = false;
+        }
+      } catch (err) {
+        toast('error', 'Network error');
+        bookFollowupBtn.disabled = false;
+        bookFollowupBtn.textContent = 'Book';
+        dateField.disabled = false;
+      }
+    });
+  }
+  // 👆 END LOGIC 👆
+
   // Keyboard
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
@@ -728,12 +802,74 @@ function openApptModal() {
 function openServeModal(queueId) {
   const entry = state.queue.find(q => q.id === queueId);
   if (!entry) return;
+
   $('sf-queue-id').value = queueId;
-  $('sf-amount').value = entry.fee || '';
-  $('serve-modal-title').textContent = `Complete: ${entry.patient_name}`;
+
+  // 👇 NEW: Change Title and Submit Button Text dynamically 👇
+  const submitBtn = document.querySelector('#serve-form button[type="submit"]');
+  if (entry.status === 'DONE' || entry.status === 'NOSHOW' || entry.status === 'MISSED') {
+    $('serve-modal-title').textContent = `Edit Record: ${entry.patient_name}`;
+    if (submitBtn) submitBtn.textContent = 'Update Record'; // Just updating, no queue jump
+  } else {
+    $('serve-modal-title').textContent = `Complete: ${entry.patient_name}`;
+    if (submitBtn) submitBtn.textContent = 'Save & Next'; // Indicates the queue will advance
+  }
+  // 👆 END NEW 👆
+
   $('serve-form').reset();
-  $('sf-queue-id').value = queueId;
-  $('sf-amount').value = entry.fee || '';
+
+  // Repopulate standard fields
+  $('sf-amount').value = entry.amount_paid > 0 ? entry.amount_paid : (entry.fee || '');
+  if (entry.status !== 'WAITING' && entry.status !== 'CALLED') {
+    $('sf-status').value = entry.status;
+  }
+  $('sf-notes').value = entry.notes || '';
+
+  const rxField = $('sf-prescription');
+  const dateField = $('sf-followup');
+  const btnFollowup = $('btn-book-followup');
+
+  // Repopulate Rx
+  if (rxField) rxField.value = entry.prescription || '';
+
+  if (dateField) {
+    // Fill in the date the doctor saved
+    dateField.value = entry.follow_up_date || '';
+    
+    // Prevent selecting past dates
+    const todayStr = new Date().toISOString().split('T')[0];
+    dateField.setAttribute('min', todayStr);
+
+    // Default to UNLOCKED (Assume it's just a doctor's recommendation for now)
+    dateField.disabled = false;
+    if (btnFollowup) {
+      btnFollowup.disabled = false;
+      btnFollowup.textContent = 'Book';
+    }
+
+    // The Smart Check: Ask the backend if an appointment ACTUALLY exists!
+    if (entry.follow_up_date && entry.patient_id) {
+      fetch(`${APPT_API}?date=${entry.follow_up_date}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.appointments) {
+            // Verify if this patient is in the appointment list for that date
+            const isBooked = data.appointments.some(a => String(a.patient_id) === String(entry.patient_id));
+            
+            if (isBooked) {
+              // It IS officially booked! Lock the UI.
+              dateField.disabled = true;
+              if (btnFollowup) {
+                btnFollowup.disabled = true;
+                btnFollowup.textContent = 'Booked!';
+              }
+            }
+          }
+        })
+        .catch(err => console.error("Could not verify booking status", err));
+    }
+  }
+
   $('serve-modal').classList.add('open');
 }
 
@@ -892,25 +1028,35 @@ async function handleServeSubmit(e) {
   const queueId = $('sf-queue-id').value;
   const data = Object.fromEntries(new FormData($('serve-form')));
 
-  // 1. Capture the memory flag BEFORE we close the modal and it resets!
   const willAutoCall = state.autoCallNext && (data.status === 'DONE' || data.status === 'NOSHOW' || data.status === 'MISSED');
 
-  const result = await queueAction(parseInt(queueId), 'complete', {
+  // 👇 CRITICAL FIX: Manually grab the date because FormData ignores 'disabled' fields! 👇
+  const dateField = $('sf-followup');
+  const actualFollowUpDate = dateField ? dateField.value : null;
+
+  const payload = {
     status: data.status,
     amount_paid: data.amount_paid ? parseFloat(data.amount_paid) : 0,
     notes: data.notes,
-  });
+    prescription: data.prescription,    
+    follow_up_date: actualFollowUpDate // <-- Uses the manual value!
+  };
+
+  const result = await queueAction(parseInt(queueId), 'complete', payload);
 
   if (result?.success) {
     const statusMsg = { DONE: '✅ Marked done', NOSHOW: '❌ Marked no-show', MISSED: '⏭ Moved to missed', SERVING: '🔄 Still serving' };
-    toast('success', statusMsg[data.status] || 'Updated');
+    
+    if (actualFollowUpDate) {
+      toast('success', `✅ Saved! Follow-up date noted for ${new Date(actualFollowUpDate).toLocaleDateString()}`);
+    } else {
+      toast('success', statusMsg[data.status] || 'Updated');
+    }
 
-    // This naturally resets state.autoCallNext to false in the background
     closeModal('serve-modal');
 
-    // 2. Trigger the auto-call if we captured 'true' earlier
     if (willAutoCall) {
-      state.autoCallNext = true; // Keep the button in "Next Patient" mode visually
+      state.autoCallNext = true;
       updateQueueButtonState();
 
       setTimeout(async () => {
@@ -918,7 +1064,7 @@ async function handleServeSubmit(e) {
         if (waiting.length > 0) {
           await queueAction(waiting[0].id, 'call');
         }
-        state.autoCallNext = false; // Turn off the flag when done
+        state.autoCallNext = false;
         updateQueueButtonState();
       }, 400);
     }

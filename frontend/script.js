@@ -1,363 +1,775 @@
-/* ============================================================
-   FLOWDESK — script.js
-   Handles: navbar scroll, hamburger, theme toggle,
-            stats counter animation, ticker rotation,
-            scroll reveals, card hover tilt, bar animation
-============================================================ */
+/* ═══════════════════════════════════════════════════
+   dashboard.js — ClinicBase Dashboard
+   Connects to: /api/dashboard/* endpoints
+═══════════════════════════════════════════════════ */
 
 'use strict';
 
-// ============================================================
-// 1. THEME TOGGLE
-// ============================================================
-(function initTheme() {
-  const root   = document.documentElement;
-  const btn    = document.querySelector('[data-theme-toggle]');
-  const sunIcon  = btn?.querySelector('.icon-sun');
-  const moonIcon = btn?.querySelector('.icon-moon');
+// ─── STATE ──────────────────────────────────────────
+const State = {
+    range: 'today',
+    from: '',
+    to: '',
+    patientPage: 1,      // Added for pagination
+    patientSearch: '',   // Added for filtering
+    charts: {},
+    currentPatient: null,
+    drawerTab: 'overview',
+};
 
-  // Resolve initial theme from system preference
-  let theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  applyTheme(theme);
+// ─── HELPERS ────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const today = () => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+};
 
-  btn?.addEventListener('click', () => {
-    theme = theme === 'dark' ? 'light' : 'dark';
-    applyTheme(theme);
-  });
+function getDateRange(range) {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const fmt = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-  function applyTheme(t) {
-    root.setAttribute('data-theme', t);
-    if (sunIcon && moonIcon) {
-      sunIcon.style.display  = t === 'dark'  ? 'block' : 'none';
-      moonIcon.style.display = t === 'light' ? 'block' : 'none';
+    const d = new Date(now);
+    switch (range) {
+        case 'today': return { from: fmt(d), to: fmt(d) };
+        case 'week': {
+            const day = d.getDay();
+            const mon = new Date(d); mon.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+            return { from: fmt(mon), to: fmt(d) };
+        }
+        case 'month': {
+            return { from: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`, to: fmt(d) };
+        }
+        case 'quarter': {
+            const qStart = new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1);
+            return { from: fmt(qStart), to: fmt(d) };
+        }
+        case 'year': {
+            return { from: `${d.getFullYear()}-01-01`, to: fmt(d) };
+        }
+        default: return { from: State.from, to: State.to };
     }
-    btn?.setAttribute('aria-label', `Switch to ${t === 'dark' ? 'light' : 'dark'} mode`);
-  }
-})();
+}
 
+function fmtMoney(n) {
+    if (n === null || n === undefined) return '₹0';
+    return '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+}
 
-// ============================================================
-// 2. NAVBAR — scroll shadow + shrink
-// ============================================================
-(function initNavbar() {
-  const navbar = document.getElementById('navbar');
-  if (!navbar) return;
+function fmtNum(n) {
+    return Number(n || 0).toLocaleString('en-IN');
+}
 
-  let ticking = false;
+function fmtDate(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
+}
 
-  function onScroll() {
-    if (!ticking) {
-      requestAnimationFrame(() => {
-        navbar.classList.toggle('scrolled', window.scrollY > 12);
-        ticking = false;
-      });
-      ticking = true;
+function fmtTime(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+}
+
+function statusBadge(s) {
+    return `<span class="status-badge status-${s}">${s}</span>`;
+}
+
+function priorityBadge(p) {
+    return `<span class="priority-badge priority-${p || 'NORMAL'}">${p || 'NORMAL'}</span>`;
+}
+
+function toast(msg, type = 'info') {
+    const icons = {
+        success: `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>`,
+        error: `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
+        info: `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+    };
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.innerHTML = `${icons[type] || icons.info} <span>${msg}</span>`;
+    $('toastContainer').appendChild(el);
+    setTimeout(() => { el.classList.add('toast-out'); setTimeout(() => el.remove(), 220); }, 3200);
+}
+
+// ─── CLOCK ──────────────────────────────────────────
+function startClock() {
+    const el = $('clock');
+    const tick = () => {
+        const now = new Date();
+        el.textContent = now.toLocaleTimeString('en-IN', { hour12: false });
+    };
+    tick();
+    setInterval(tick, 1000);
+}
+
+// ─── API CALLS ───────────────────────────────────────
+async function apiFetch(url) {
+    const baseUrl = '';
+    const r = await fetch(`${baseUrl}${url}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+}
+
+// ─── MAIN LOAD ───────────────────────────────────────
+async function loadDashboard() {
+    const { from, to } = State.range === 'custom'
+        ? { from: State.from, to: State.to }
+        : getDateRange(State.range);
+
+    if (!from || !to) return toast('Select a valid date range', 'error');
+
+    State.from = from;
+    State.to = to;
+
+    $('lastUpdated').textContent = 'Loading…';
+    $('refreshBtn').querySelector('svg').classList.add('spin');
+
+    try {
+        const [kpi, trend, breakdown, doctors] = await Promise.all([
+            apiFetch(`/api/dashboard/kpi?from=${from}&to=${to}`),
+            apiFetch(`/api/dashboard/trend?from=${from}&to=${to}&group=${$('revenueChartGroup').value}`),
+            apiFetch(`/api/dashboard/breakdown?from=${from}&to=${to}`),
+        ]);
+
+        renderKPI(kpi.data);
+        renderCharts(trend.data, breakdown.data);
+        $('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-IN', { hour12: false });
+    } catch (e) {
+        toast('Failed to load dashboard: ' + e.message, 'error');
+        console.error(e);
+    } finally {
+        $('refreshBtn').querySelector('svg').classList.remove('spin');
     }
-  }
+}
 
-  window.addEventListener('scroll', onScroll, { passive: true });
-  onScroll(); // run once on load
-})();
+// ─── KPI RENDER ──────────────────────────────────────
+function renderKPI(d) {
+    // Determine text based on current selected filter
+    const rangeLabels = {
+        'today': 'today',
+        'week': 'this week',
+        'month': 'this month',
+        'quarter': 'this quarter',
+        'year': 'this year',
+        'custom': 'in selected period'
+    };
+    const periodText = rangeLabels[State.range] || 'in period';
 
+    // Make Total Revenue show the collected amount with dynamic subtext
+    $('kRevenue').textContent = fmtMoney(d.total_collected);
+    $('kRevenueSub').textContent = `Total revenue ${periodText}`;
 
-// ============================================================
-// 3. HAMBURGER MENU
-// ============================================================
-(function initHamburger() {
-  const btn   = document.getElementById('hamburger');
-  const links = document.getElementById('nav-links');
-  if (!btn || !links) return;
+    $('kPatients').textContent = fmtNum(d.total_patients);
+    $('kPatientsSub').textContent = `Registered in system`;
 
-  btn.addEventListener('click', () => {
-    const open = links.classList.toggle('open');
-    btn.classList.toggle('open', open);
-    btn.setAttribute('aria-expanded', String(open));
-  });
+    $('kVisits').textContent = fmtNum(d.total_visits);
+    $('kVisitsSub').textContent = `Patient visit records`;
 
-  // Close on nav link click
-  links.querySelectorAll('.nav-link').forEach(link => {
-    link.addEventListener('click', () => {
-      links.classList.remove('open');
-      btn.classList.remove('open');
-      btn.setAttribute('aria-expanded', 'false');
+    $('kAppts').textContent = fmtNum(d.total_appointments);
+    $('kApptsSub').textContent = `Booked appointments`;
+
+    $('kWalkins').textContent = fmtNum(d.total_footfall);
+    $('kWalkinsSub').textContent = 'Checked in today (walk-in + appointment)';
+
+    $('kDone').textContent = fmtNum(d.total_done);
+    $('kDoneSub').textContent = `Fully served patients`;
+
+    $('kNoshow').textContent = fmtNum(d.total_noshow + d.total_missed);
+    $('kNoshowSub').textContent = `No-shows: ${d.total_noshow}, Missed: ${d.total_missed}`;
+
+    $('kSms').textContent = fmtNum(d.total_sms);
+    $('kSmsSub').textContent = `SMS sent in period`;
+
+    $('kNewPat').textContent = fmtNum(d.new_patients);
+    $('kNewPatSub').textContent = `Registered in this period`;
+
+    const avgFee = d.total_done > 0 ? (d.total_collected / d.total_done) : 0;
+    $('kAvgFee').textContent = fmtMoney(avgFee);
+    $('kAvgFeeSub').textContent = `Per completed visit`;
+
+    $('kWaiting').textContent = fmtNum(d.total_waiting);
+    $('kWaitingSub').textContent = `Currently in queue`;
+}
+
+// ─── CHARTS ──────────────────────────────────────────
+function renderCharts(trend, breakdown) {
+    // Revenue trend
+    buildBarChart('revenueChart', {
+        labels: trend.map(r => r.label),
+        values: trend.map(r => r.revenue),
+        color: '#2563EB',
+        label: 'Revenue (₹)',
+        yFmt: v => '₹' + Number(v).toLocaleString('en-IN'),
     });
-  });
 
-  // Close on outside click
-  document.addEventListener('click', (e) => {
-    if (!btn.contains(e.target) && !links.contains(e.target)) {
-      links.classList.remove('open');
-      btn.classList.remove('open');
-      btn.setAttribute('aria-expanded', 'false');
-    }
-  });
-})();
-
-
-// ============================================================
-// 4. STATS COUNTER ANIMATION
-// ============================================================
-(function initCounters() {
-  const counters = document.querySelectorAll('[data-count]');
-  if (!counters.length) return;
-
-  // Easing function — ease out cubic
-  function easeOutCubic(t) {
-    return 1 - Math.pow(1 - t, 3);
-  }
-
-  function animateCounter(el) {
-    const target   = parseInt(el.getAttribute('data-count'), 10);
-    const suffix   = el.getAttribute('data-suffix') || '';
-    const duration = 1800; // ms
-    const start    = performance.now();
-
-    function tick(now) {
-      const elapsed  = now - start;
-      const progress = Math.min(elapsed / duration, 1);
-      const eased    = easeOutCubic(progress);
-      const current  = Math.round(eased * target);
-
-      el.textContent = current.toLocaleString('en-IN') + suffix;
-
-      if (progress < 1) {
-        requestAnimationFrame(tick);
-      } else {
-        el.textContent = target.toLocaleString('en-IN') + suffix;
-      }
-    }
-
-    requestAnimationFrame(tick);
-  }
-
-  // Use IntersectionObserver — fire once when stat strip enters view
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        animateCounter(entry.target);
-        observer.unobserve(entry.target);
-      }
+    // Patient trend
+    buildBarChart('patientChart', {
+        labels: trend.map(r => r.label),
+        values: trend.map(r => r.visits),
+        color: '#7c3aed',
+        label: 'Visits',
+        yFmt: v => v,
     });
-  }, { threshold: 0.4 });
 
-  counters.forEach(el => observer.observe(el));
-})();
+    // Visit type donut
+    buildDoughnut('visitTypeChart', breakdown.visit_types);
 
+    // Status donut
+    buildDoughnut('statusChart', breakdown.statuses, [
+        '#059669', '#2563EB', '#0891b2', '#d97706', '#dc2626', '#ea580c', '#7c3aed'
+    ]);
 
-// ============================================================
-// 5. LIVE TICKER ROTATION
-// ============================================================
-(function initTicker() {
-  const el = document.getElementById('ticker-text');
-  if (!el) return;
+    // Priority bar
+    buildDoughnut('priorityChart', breakdown.priorities, ['#dc2626', '#7c3aed', '#94a3b8']);
+}
 
-  const messages = [
-    '23 patients waiting · Avg wait 28 min · Counter 3 serving A-71',
-    'Token B-43 called · Blood Test · Counter 2',
-    '87 patients served today · 4 no-shows · Peak: 10:00–11:30 AM',
-    'Appointment slot open at 2:30 PM · OPD General',
-    'New walk-in added — Token C-24 · Pharmacy · Est. 10 min',
-    'Emergency priority issued — Token A-72 · Counter 1',
-  ];
+function buildBarChart(canvasId, { labels, values, color, label, yFmt }) {
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    if (State.charts[canvasId]) State.charts[canvasId].destroy();
 
-  let index = 0;
+    State.charts[canvasId] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label,
+                data: values,
+                backgroundColor: color + '22',
+                borderColor: color,
+                borderWidth: 2,
+                borderRadius: 6,
+                borderSkipped: false,
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: true,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: { label: ctx => yFmt(ctx.parsed.y) }
+                }
+            },
+            scales: {
+                x: { grid: { display: false }, ticks: { font: { size: 11, family: 'JetBrains Mono' } } },
+                y: { grid: { color: 'rgba(15,23,42,0.05)' }, ticks: { font: { size: 11 }, callback: yFmt } }
+            }
+        }
+    });
+}
 
-  function rotateTicker() {
-    // Fade out
-    el.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
-    el.style.opacity    = '0';
-    el.style.transform  = 'translateY(-6px)';
+function buildDoughnut(canvasId, items, colors) {
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    if (State.charts[canvasId]) State.charts[canvasId].destroy();
 
-    setTimeout(() => {
-      index = (index + 1) % messages.length;
-      el.textContent = messages[index];
+    const defaultColors = ['#2563EB', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#ea580c'];
+    const palette = colors || defaultColors;
 
-      // Fade in from below
-      el.style.transform = 'translateY(6px)';
-      el.style.opacity   = '0';
-
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          el.style.opacity   = '1';
-          el.style.transform = 'translateY(0)';
+    if (!items || items.length === 0) {
+        State.charts[canvasId] = new Chart(ctx, {
+            type: 'doughnut',
+            data: { labels: ['No data'], datasets: [{ data: [1], backgroundColor: ['#e2e8f0'] }] },
+            options: { responsive: true, plugins: { legend: { display: false } } }
         });
-      });
-    }, 420);
-  }
-
-  setInterval(rotateTicker, 4000);
-})();
-
-
-// ============================================================
-// 6. PROGRESS BARS — animate on page load
-// ============================================================
-(function initBars() {
-  const bars = document.querySelectorAll('.pc-bar-fill');
-  if (!bars.length) return;
-
-  // Store target widths then reset to 0, animate in
-  bars.forEach(bar => {
-    const target = bar.style.width;
-    bar.style.width = '0%';
-
-    // Short delay so CSS transition fires visibly
-    setTimeout(() => {
-      bar.style.width = target;
-    }, 600);
-  });
-})();
-
-
-// ============================================================
-// 7. FEATURE CARD — subtle 3D tilt on hover
-// ============================================================
-(function initCardTilt() {
-  const cards = document.querySelectorAll('.feature-card');
-  if (!cards.length) return;
-
-  // Disable on touch devices
-  if (matchMedia('(hover: none)').matches) return;
-
-  const MAX_TILT = 4; // degrees
-
-  cards.forEach(card => {
-    card.addEventListener('mousemove', (e) => {
-      const rect   = card.getBoundingClientRect();
-      const cx     = rect.left + rect.width  / 2;
-      const cy     = rect.top  + rect.height / 2;
-      const dx     = (e.clientX - cx) / (rect.width  / 2);
-      const dy     = (e.clientY - cy) / (rect.height / 2);
-      const tiltX  =  dy * MAX_TILT;
-      const tiltY  = -dx * MAX_TILT;
-
-      card.style.transform  = `translateY(-4px) rotateX(${tiltX}deg) rotateY(${tiltY}deg)`;
-      card.style.transition = 'transform 80ms linear';
-    });
-
-    card.addEventListener('mouseleave', () => {
-      card.style.transform  = '';
-      card.style.transition = 'transform 400ms var(--ease-out, cubic-bezier(0.16,1,0.3,1))';
-    });
-  });
-})();
-
-
-// ============================================================
-// 8. HERO PREVIEW CARDS — staggered entrance
-// ============================================================
-(function initHeroCards() {
-  const cards = document.querySelectorAll('.preview-card');
-  if (!cards.length) return;
-
-  cards.forEach((card, i) => {
-    card.style.opacity   = '0';
-    card.style.transform = 'translateY(32px) scale(0.96)';
-    card.style.transition = `opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out)`;
-    card.style.transitionDelay = `${300 + i * 120}ms`;
-
-    // Trigger after a short paint frame
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        card.style.opacity   = '1';
-        card.style.transform = 'translateY(0) scale(1)';
-      });
-    });
-  });
-})();
-
-
-// ============================================================
-// 9. SCROLL REVEAL — feature cards + stat items
-// ============================================================
-(function initScrollReveal() {
-  // Only run if CSS scroll-driven animations are NOT supported
-  if (CSS.supports('animation-timeline', 'scroll()')) return;
-
-  const targets = document.querySelectorAll(
-    '.feature-card, .stat-item, .section-header'
-  );
-  if (!targets.length) return;
-
-  targets.forEach(el => {
-    el.style.opacity   = '0';
-    el.style.transform = 'translateY(20px)';
-    el.style.transition = 'opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out)';
-  });
-
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach((entry, i) => {
-      if (entry.isIntersecting) {
-        // Stagger siblings that appear together
-        const delay = Array.from(targets).indexOf(entry.target) % 3 * 80;
-        setTimeout(() => {
-          entry.target.style.opacity   = '1';
-          entry.target.style.transform = 'translateY(0)';
-        }, delay);
-        observer.unobserve(entry.target);
-      }
-    });
-  }, { threshold: 0.15 });
-
-  targets.forEach(el => observer.observe(el));
-})();
-
-
-// ============================================================
-// 10. ACTIVE NAV LINK — highlight based on current page
-// ============================================================
-(function initActiveNav() {
-  const links    = document.querySelectorAll('.nav-link');
-  const current  = window.location.pathname.split('/').pop() || 'index.html';
-
-  links.forEach(link => {
-    const href = link.getAttribute('href') || '';
-    const page = href.split('/').pop();
-    link.classList.toggle('active', page === current);
-  });
-})();
-
-
-// ============================================================
-// 11. SMOOTH PAGE TRANSITIONS — fade out on nav click
-// ============================================================
-(function initPageTransition() {
-  // Inject fade-out style
-  const style = document.createElement('style');
-  style.textContent = `
-    body.page-exit {
-      opacity: 0;
-      transform: translateY(-6px);
-      transition: opacity 0.25s ease, transform 0.25s ease;
-      pointer-events: none;
+        return;
     }
-    body {
-      transition: opacity 0.25s ease, transform 0.25s ease;
+
+    State.charts[canvasId] = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: items.map(i => i.label),
+            datasets: [{
+                data: items.map(i => i.count),
+                backgroundColor: items.map((_, idx) => palette[idx % palette.length]),
+                borderWidth: 2,
+                borderColor: '#ffffff',
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: true,
+            plugins: {
+                legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12, padding: 12 } },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => ` ${ctx.label}: ${ctx.parsed} (${((ctx.parsed / ctx.dataset.data.reduce((a, b) => a + b, 0)) * 100).toFixed(1)}%)`
+                    }
+                }
+            }
+        }
+    });
+}
+
+// ─── DOCTORS ─────────────────────────────────────────
+function renderDoctors(doctors) {
+    const grid = $('doctorGrid');
+    if (!doctors || doctors.length === 0) {
+        grid.innerHTML = '<div class="empty-state">No doctor data for this period.</div>';
+        return;
     }
+    grid.innerHTML = doctors.map(d => `
+    <div class="doctor-card">
+      <div class="doctor-avatar">${(d.doctor || 'U')[0].toUpperCase()}</div>
+      <div class="doctor-name">${d.doctor || 'Unassigned'}</div>
+      <div class="doctor-stats">${fmtNum(d.visits)} visits · ${fmtNum(d.done)} done</div>
+      <div class="doctor-revenue">${fmtMoney(d.revenue)}</div>
+    </div>
+  `).join('');
+}
+
+
+// ─── PATIENT DIRECTORY TABLE ─────────────────────────
+async function loadPatientTable(page = 1) {
+    State.patientPage = page;
+    try {
+        const url = `/api/dashboard/all-patients?page=${page}&search=${encodeURIComponent(State.patientSearch || '')}`;
+        const data = await apiFetch(url);
+        renderPatientTable(data);
+    } catch (e) {
+        toast('Failed to load patient directory', 'error');
+    }
+}
+
+function renderPatientTable(res) {
+    const { data, total, page } = res;
+    $('patientTableCount').textContent = `${fmtNum(total)} total patients`;
+
+    const tbody = $('patientTableBody');
+    if (!data.length) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:28px;color:var(--text-faint)">No patients found</td></tr>`;
+    } else {
+        tbody.innerHTML = data.map(p => {
+            // Gender badge styling
+            const g = (p.gender || '').toUpperCase()[0];
+            let gBg = '#f1f5f9', gCol = '#64748b';
+            if (g === 'M') { gBg = '#eff6ff'; gCol = '#2563eb'; }
+            if (g === 'F') { gBg = '#fdf4ff'; gCol = '#9333ea'; }
+
+            return `
+      <tr class="clickable-row" data-pid="${p.id}" style="cursor:pointer;">
+        <td>
+          <span style="font-family:var(--font-mono);font-size:11.5px;color:var(--text-muted);">
+            ${p.patient_id || '—'}
+          </span>
+        </td>
+        <td>
+          <span style="display:inline-flex;align-items:center;gap:5px;color:#2563eb;background:#eff6ff;border:1px solid #bfdbfe;padding:3px 8px;border-radius:4px;font-size:11.5px;font-weight:600;white-space:nowrap;">
+            <svg viewBox="0 0 14 14" fill="none" style="width:11px;height:11px;opacity:0.8"><rect x="2" y="3" width="10" height="9" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4 1v3M10 1v3M2 6h10" stroke="currentColor" stroke-width="1.3"/></svg>
+            ${fmtDate(p.created_at)}
+          </span>
+        </td>
+        <td>
+          <span style="font-weight:600;color:var(--text)">${escHtml(p.full_name)}</span>
+        </td>
+        <td>
+          ${p.mobile ? `
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:#0891b2;background:#ecfeff;padding:3px 8px;border-radius:4px;font-weight:600;">
+            <svg viewBox="0 0 14 14" fill="none" style="width:10px;height:10px;"><rect x="3" y="1" width="8" height="12" rx="1.5" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="11" r="0.7" fill="currentColor"/></svg>
+            ${p.mobile}
+          </span>
+          ` : '<span style="color:var(--text-faint)">—</span>'}
+        </td>
+        <td>
+          <div style="display:flex;align-items:center;gap:6px;">
+            ${p.age ? `<span style="display:inline-block;padding:2px 8px;border-radius:100px;background:#fffbeb;color:#d97706;border:1px solid #fde68a;font-weight:800;font-size:11px;letter-spacing:0.05em;">${p.age}Y</span>` : '<span style="color:var(--text-faint)">—</span>'}
+            <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:100px;background:${gBg};color:${gCol};">
+              ${p.gender ? p.gender.charAt(0).toUpperCase() : '—'}
+            </span>
+          </div>
+        </td>
+        <td style="font-size:12px;color:var(--text-muted)">${escHtml(p.city || '—')}</td>
+      </tr>
+    `}).join('');
+
+        tbody.querySelectorAll('.clickable-row').forEach(tr => {
+            tr.addEventListener('click', () => {
+                openPatientDrawer(tr.dataset.pid);
+            });
+        });
+    }
+
+    renderPagination('patientTablePagination', total, page, 10, p => loadPatientTable(p));
+}
+
+// ─── PAGINATION ──────────────────────────────────
+function renderPagination(containerId, total, page, pageSize, onPage) {
+    const container = $(containerId);
+    const pages = Math.ceil(total / pageSize);
+    if (pages <= 1) { container.innerHTML = ''; return; }
+
+    // Next / Previous logic
+    const prevBtn = `<button class="pg-btn" ${page <= 1 ? 'disabled' : ''} data-p="${page - 1}">Previous</button>`;
+    const nextBtn = `<button class="pg-btn" ${page >= pages ? 'disabled' : ''} data-p="${page + 1}">Next</button>`;
+
+    container.innerHTML = `
+    <div style="display:flex; gap: 8px; align-items: center;">
+      ${prevBtn}
+      <span style="font-size: 12px; color: var(--text-muted);">Page ${page} of ${pages}</span>
+      ${nextBtn}
+    </div>
   `;
-  document.head.appendChild(style);
 
-  document.querySelectorAll('a[href]').forEach(link => {
-    const href = link.getAttribute('href');
-    // Only internal .html links, not hash links
-    if (!href || href.startsWith('#') || href.startsWith('http') || href.startsWith('mailto')) return;
+    // Bind click events to the new buttons
+    container.querySelectorAll('.pg-btn').forEach(b =>
+        b.addEventListener('click', () => onPage(parseInt(b.dataset.p)))
+    );
+}
 
-    link.addEventListener('click', (e) => {
-      e.preventDefault();
-      document.body.classList.add('page-exit');
-      setTimeout(() => {
-        window.location.href = href;
-      }, 260);
+// ─── DAILY SNAPSHOT ──────────────────────────────────
+async function loadDaySnapshot(date) {
+    try {
+        const data = await apiFetch(`/api/dashboard/day?date=${date}`);
+        const d = data.data;
+
+        $('dRevenue').textContent = fmtMoney(d.collected);
+        $('dAppts').textContent = fmtNum(d.appointments);
+        $('dWalkins').textContent = fmtNum(d.walkins);
+        $('dDone').textContent = fmtNum(d.done);
+        $('dNoshow').textContent = fmtNum(d.noshow);
+        $('dNewReg').textContent = fmtNum(d.new_reg || 0);
+
+        $('dayTableTitle').textContent = `Queue for ${fmtDate(date)}`;
+        $('dayApptCount').textContent = `${d.entries.length} entries`;
+
+        const tbody = $('dayApptBody');
+        if (!d.entries.length) {
+            tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-faint)">No entries for this date</td></tr>`;
+        } else {
+            tbody.innerHTML = d.entries.map(r => `
+        <tr>
+          <td><span class="token-pill">${r.token_number}</span></td>
+          <td><span class="patient-link" data-pid="${r.patient_id}" style="font-weight:600;cursor:pointer;color:var(--primary)">${escHtml(r.patient_name)}</span></td>
+          <td style="font-size:12px;color:var(--secondary)">${r.mobile || '—'}</td>
+          <td><span style="font-size:11px;padding:2px 7px;border-radius:4px;background:var(--surface-2);border:1px solid var(--border)">${r.ticket_type}</span></td>
+          <td style="font-size:12px;color:var(--text-muted)">${escHtml(r.doctor) || '—'}</td>
+          <td style="font-family:var(--font-mono);font-size:12px">${r.slot_time || '—'}</td>
+          <td>${priorityBadge(r.priority)}</td>
+          <td>${statusBadge(r.status)}</td>
+          <td style="font-family:var(--font-mono);font-weight:600">${fmtMoney(r.fee)}</td>
+          <td style="font-family:var(--font-mono);font-weight:600;color:var(--success)">${fmtMoney(r.amount_paid)}</td>
+        </tr>
+      `).join('');
+        }
+
+        tbody.querySelectorAll('.patient-link').forEach(el => {
+            el.addEventListener('click', () => {
+                const pid = el.dataset.pid;
+                if (pid && pid !== 'null') openPatientDrawer(pid);
+            });
+        });
+
+        // Render missed / not-checked-in appointments
+        const missed = d.no_show_appointments || [];
+        $('dayMissedApptCount').textContent = `${missed.length} records`;
+        const missedTbody = $('dayMissedApptBody');
+        if (!missed.length) {
+            missedTbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-faint)">All booked patients checked in</td></tr>`;
+        } else {
+            missedTbody.innerHTML = missed.map(a => `
+    <tr>
+      <td><span class="patient-link" data-pid="${a.patient_id}" style="font-weight:600;cursor:pointer;color:var(--primary)">${escHtml(a.patient_name)}</span></td>
+      <td style="font-size:12px;color:var(--secondary)">${a.mobile || '—'}</td>
+      <td style="font-size:12px;color:var(--text-muted)">${escHtml(a.doctor) || '—'}</td>
+      <td style="font-family:var(--font-mono);font-size:12px">${a.slot_time || '—'}</td>
+      <td>${priorityBadge(a.priority)}</td>
+      <td><span class="status-badge NOSHOW" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">NOT CHECKED-IN</span></td>
+      <td style="font-family:var(--font-mono);font-weight:600">${fmtMoney(a.fee)}</td>
+    </tr>
+  `).join('');
+        }
+
+        missedTbody.querySelectorAll('.patient-link').forEach(el => {
+            el.addEventListener('click', () => {
+                const pid = el.dataset.pid;
+                if (pid && pid !== 'null') openPatientDrawer(pid);
+            });
+        });
+    } catch (e) {
+        toast('Failed to load day data: ' + e.message, 'error');
+    }
+}
+
+// ─── PATIENT DRAWER ───────────────────────────────────
+async function openPatientDrawer(patientId) {
+    if (!patientId || patientId === 'null') return;
+    try {
+        const data = await apiFetch(`/api/patients/${patientId}`);
+        const p = data.patient;
+        State.currentPatient = p;
+
+        $('drawerAvatar').textContent = (p.full_name || '?')[0].toUpperCase();
+        $('drawerName').textContent = p.full_name || 'Unknown';
+        $('drawerPid').textContent = p.patient_id || `ID: ${p.id}`;
+
+        renderDrawerTab('overview');
+
+        $('drawerOverlay').classList.add('open');
+        $('patientDrawer').classList.add('open');
+    } catch (e) {
+        toast('Could not load patient: ' + e.message, 'error');
+    }
+}
+
+function renderDrawerTab(tab) {
+    const p = State.currentPatient;
+    if (!p) return;
+    State.drawerTab = tab;
+
+    document.querySelectorAll('.drawer-tab').forEach(b =>
+        b.classList.toggle('active', b.dataset.tab === tab)
+    );
+
+    const body = $('drawerBody');
+
+    if (tab === 'overview') {
+        const fields = [
+            ['Patient ID', p.patient_id, 'mono'],
+            ['Mobile', p.mobile],
+            ['Alt Mobile', p.alt_mobile],
+            ['Email', p.email],
+            ['DOB', fmtDate(p.dob)],
+            ['Age', p.age ? `${p.age} yrs` : '—'],
+            ['Gender', p.gender],
+            ['Blood Group', p.blood_group],
+            ['Height', p.height_cm ? `${p.height_cm} cm` : '—'],
+            ['Weight', p.weight_kg ? `${p.weight_kg} kg` : '—'],
+            ['City', p.city],
+            ['PIN', p.pin_code],
+            ['Department', p.department],
+            ['Doctor', p.assigned_doctor],
+            ['Visit Type', p.visit_type],
+            ['Insurance', p.insurance_policy],
+            ['Emergency Contact', p.emergency_contact_name],
+            ['Emergency Mobile', p.emergency_contact_mobile],
+            ['Registered', fmtDate(p.created_at)],
+            ['Total Visits', p.visit_count || 0],
+        ];
+
+        const medSection = (p.allergies || p.chronic_conditions || p.current_medications) ? `
+      <div style="margin-top:14px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Medical Info</div>
+        ${p.allergies ? `<div class="visit-item"><div class="info-label">Allergies</div><div style="font-size:13px">${escHtml(p.allergies)}</div></div>` : ''}
+        ${p.chronic_conditions ? `<div class="visit-item"><div class="info-label">Chronic Conditions</div><div style="font-size:13px">${escHtml(p.chronic_conditions)}</div></div>` : ''}
+        ${p.current_medications ? `<div class="visit-item"><div class="info-label">Current Medications</div><div style="font-size:13px">${escHtml(p.current_medications)}</div></div>` : ''}
+      </div>
+    ` : '';
+
+        body.innerHTML = `
+      <div class="info-grid">
+        ${fields.map(([lbl, val, cls]) => `
+          <div class="info-item">
+            <span class="info-label">${lbl}</span>
+            <span class="info-val ${cls || ''}">${val || '—'}</span>
+          </div>
+        `).join('')}
+      </div>
+      ${p.chief_complaint ? `<div class="visit-item"><div class="info-label">Chief Complaint</div><div style="font-size:13px">${escHtml(p.chief_complaint)}</div></div>` : ''}
+      ${p.notes ? `<div class="visit-item"><div class="info-label">Notes</div><div style="font-size:13px">${escHtml(p.notes)}</div></div>` : ''}
+      ${medSection}
+    `;
+    }
+
+    if (tab === 'visits') {
+        const visits = p.visits || [];
+        if (!visits.length) {
+            body.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📋</div>No visit records yet.</div>`;
+            return;
+        }
+        body.innerHTML = visits.map(v => `
+      <div class="visit-item">
+        <div class="visit-item-header">
+          <span class="visit-date">${fmtDate(v.visit_date)} ${v.visit_date ? fmtTime(v.visit_date) : ''}</span>
+          <span class="visit-type-badge">${v.visit_type || 'OPD'}</span>
+        </div>
+        ${v.doctor ? `<div class="visit-doctor">Dr. ${escHtml(v.doctor)}</div>` : ''}
+        ${v.complaint ? `<div class="visit-complaint"><strong>Complaint:</strong> ${escHtml(v.complaint)}</div>` : ''}
+        ${v.diagnosis ? `<div class="visit-complaint"><strong>Diagnosis:</strong> ${escHtml(v.diagnosis)}</div>` : ''}
+        ${v.prescription ? `<div class="visit-complaint"><strong>Rx:</strong> ${escHtml(v.prescription)}</div>` : ''}
+        ${v.notes ? `<div class="visit-complaint" style="color:var(--text-muted)">${escHtml(v.notes)}</div>` : ''}
+      </div>
+    `).join('');
+    }
+
+    if (tab === 'queue') {
+        // Load queue history for this patient
+        apiFetch(`/api/dashboard/patient-queue?patient_id=${p.id}`)
+            .then(data => {
+                const entries = data.data || [];
+                if (!entries.length) {
+                    body.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🕓</div>No queue history found.</div>`;
+                    return;
+                }
+                body.innerHTML = entries.map(e => `
+          <div class="visit-item">
+            <div class="visit-item-header">
+              <span class="visit-date">${fmtDate(e.queue_date)}</span>
+              ${statusBadge(e.status)}
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap">
+              <span class="token-pill">#${e.token_number}</span>
+              ${e.ticket_type ? `<span style="font-size:11px;color:var(--text-muted)">${e.ticket_type}</span>` : ''}
+              ${e.doctor ? `<span style="font-size:11px;color:var(--text-muted)">Dr. ${escHtml(e.doctor)}</span>` : ''}
+            </div>
+            <div style="margin-top:6px;display:flex;gap:12px">
+              <span style="font-size:12px">Fee: <strong style="font-family:var(--font-mono)">${fmtMoney(e.fee)}</strong></span>
+              <span style="font-size:12px;color:var(--success)">Paid: <strong style="font-family:var(--font-mono)">${fmtMoney(e.amount_paid)}</strong></span>
+            </div>
+            ${e.chief_complaint ? `<div style="font-size:12px;color:var(--text-muted);margin-top:4px">${escHtml(e.chief_complaint)}</div>` : ''}
+          </div>
+        `).join('');
+            })
+            .catch(() => {
+                body.innerHTML = `<div class="empty-state">Could not load queue history.</div>`;
+            });
+    }
+}
+
+function closeDrawer() {
+    $('drawerOverlay').classList.remove('open');
+    $('patientDrawer').classList.remove('open');
+    State.currentPatient = null;
+}
+
+// ─── PATIENT SEARCH ───────────────────────────────────
+let searchTimer;
+function handleSearch(e) {
+    clearTimeout(searchTimer);
+    const q = e.target.value.trim();
+    const box = $('searchResults');
+    if (q.length < 2) { box.classList.remove('show'); return; }
+
+    searchTimer = setTimeout(async () => {
+        try {
+            const data = await apiFetch(`/api/patients/search?q=${encodeURIComponent(q)}`);
+            const results = data.results || [];
+            if (!results.length) {
+                box.innerHTML = `<div class="search-no-result">No patients found for "${escHtml(q)}"</div>`;
+            } else {
+                box.innerHTML = results.map(p => `
+          <div class="search-result-item" data-id="${p.id}">
+            <div class="search-result-avatar">${(p.full_name || '?')[0].toUpperCase()}</div>
+            <div>
+              <div class="search-result-name">${escHtml(p.full_name)}</div>
+              <div class="search-result-meta">${p.patient_id || ''} · ${p.mobile || 'No mobile'} · Age ${p.age || '?'}</div>
+            </div>
+          </div>
+        `).join('');
+                box.querySelectorAll('.search-result-item').forEach(item =>
+                    item.addEventListener('click', () => {
+                        openPatientDrawer(item.dataset.id);
+                        box.classList.remove('show');
+                        $('globalSearch').value = '';
+                    })
+                );
+            }
+            box.classList.add('show');
+        } catch { }
+    }, 280);
+}
+
+// ─── CHART TREND RELOAD ON GROUP CHANGE ──────────────
+async function reloadTrend() {
+    const { from, to } = State;
+    if (!from || !to) return;
+    try {
+        const data = await apiFetch(`/api/dashboard/trend?from=${from}&to=${to}&group=${$('revenueChartGroup').value}`);
+        buildBarChart('revenueChart', {
+            labels: data.data.map(r => r.label),
+            values: data.data.map(r => r.revenue),
+            color: '#2563EB', label: 'Revenue (₹)',
+            yFmt: v => '₹' + Number(v).toLocaleString('en-IN'),
+        });
+    } catch { }
+}
+
+async function reloadPatientTrend() {
+    const { from, to } = State;
+    if (!from || !to) return;
+    try {
+        const data = await apiFetch(`/api/dashboard/trend?from=${from}&to=${to}&group=${$('patientChartGroup').value}`);
+        buildBarChart('patientChart', {
+            labels: data.data.map(r => r.label),
+            values: data.data.map(r => r.visits),
+            color: '#7c3aed', label: 'Visits',
+            yFmt: v => v,
+        });
+    } catch { }
+}
+
+// ─── UTIL ──────────────────────────────────────────────
+function escHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ─── EVENT BINDING ────────────────────────────────────
+function bindEvents() {
+    // Range pills
+    document.querySelectorAll('.range-pill').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.range-pill').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            State.range = btn.dataset.range;
+            if (State.range === 'custom') {
+                $('customRange').classList.add('show');
+            } else {
+                $('customRange').classList.remove('show');
+                loadDashboard();
+            }
+        });
     });
-  });
 
-  // Fade in on arrival
-  document.body.style.opacity = '0';
-  document.body.style.transform = 'translateY(6px)';
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      document.body.style.opacity   = '1';
-      document.body.style.transform = 'translateY(0)';
+    $('applyRange').addEventListener('click', () => {
+        State.from = $('dateFrom').value;
+        State.to = $('dateTo').value;
+        if (!State.from || !State.to) return toast('Select both dates', 'error');
+        if (State.from > State.to) return toast('From must be before To', 'error');
+        loadDashboard();
     });
-  });
+
+    $('refreshBtn').addEventListener('click', loadDashboard);
+
+    // Day picker
+    $('dayPicker').value = today();
+    $('loadDayBtn').addEventListener('click', () => {
+        const d = $('dayPicker').value;
+        if (d) loadDaySnapshot(d);
+    });
+
+    // Chart group change
+    $('revenueChartGroup').addEventListener('change', reloadTrend);
+    $('patientChartGroup').addEventListener('change', reloadPatientTrend);
+
+    // Patient Table Live Search (Replacing the old Activity Filters)
+    $('patientTableSearch').addEventListener('input', (e) => {
+        State.patientSearch = e.target.value;
+        clearTimeout(window.patientSearchTimer);
+        window.patientSearchTimer = setTimeout(() => {
+            loadPatientTable(1);
+        }, 300);
+    });
+
+    // Search
+    $('globalSearch').addEventListener('input', handleSearch);
+    document.addEventListener('click', e => {
+        if (!e.target.closest('.search-wrap')) $('searchResults').classList.remove('show');
+    });
+
+    // Drawer
+    $('drawerClose').addEventListener('click', closeDrawer);
+    $('drawerOverlay').addEventListener('click', closeDrawer);
+    document.querySelectorAll('.drawer-tab').forEach(tab => {
+        tab.addEventListener('click', () => renderDrawerTab(tab.dataset.tab));
+    });
+}
+
+// ─── INIT ──────────────────────────────────────────────
+(async function init() {
+    startClock();
+    bindEvents();
+    $('dayPicker').value = today();
+    await loadDashboard();
+    await loadDaySnapshot(today());
+    await loadPatientTable(1); // Load the new patient directory
 })();

@@ -82,6 +82,8 @@ export const QUEUE_SCHEMA = `
     start_time        TEXT,
     end_time          TEXT,
     notes             TEXT,
+    prescription      TEXT,       
+    follow_up_date    TEXT,     
     called_at         TEXT,
     served_at         TEXT,
     created_at        TEXT NOT NULL,

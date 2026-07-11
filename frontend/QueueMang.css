@@ -449,3 +449,59 @@ button { cursor: pointer; border: none; background: none; }
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+
+/* ─── RESPONSIVE TOPBAR ─────────────────────── */
+@media (max-width: 950px) {
+  .topbar-clock { display: none; }
+}
+
+@media (max-width: 768px) {
+  /* Topbar Responsive */
+  .topbar { padding: 0 12px; gap: 8px; }
+  .topbar-badge { display: none; }
+  .topbar-right .btn .btn-text { display: none; }
+  .topbar-right .btn { padding: 0; width: 36px; justify-content: center; }
+  .topbar-right .btn svg { margin: 0; }
+  .topbar-right .btn.btn-sm { width: 32px; height: 32px; }
+
+  /* Queue Toolbar Grid Alignment */
+  .queue-toolbar { flex-direction: column; align-items: stretch; gap: 12px; }
+  .toolbar-left { width: 100%; justify-content: space-between; }
+  .toolbar-right { 
+    display: grid; 
+    grid-template-columns: 1fr 1fr; 
+    gap: 10px; 
+    width: 100%; 
+  }
+  .btn-start-queue { grid-column: 1 / -1; justify-content: center; }
+  .filter-select { width: 100%; min-width: 0; }
+  #refresh-queue-btn { grid-column: 1 / -1; justify-content: center; height: 36px; }
+
+  /* Modals & Queue Cards */
+  .form-grid { grid-template-columns: 1fr; gap: 16px; }
+  .modal-body { padding: 16px; }
+  .modal-header { padding: 16px 16px 12px; }
+  .queue-card { flex-wrap: wrap; padding: 12px; }
+  .qright { width: 100%; flex-direction: row; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 10px; margin-top: 4px; }
+}
+
+@media (max-width: 480px) {
+  /* Stats Row */
+  .stats-row { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .stat-card { padding: 10px; flex-direction: column; align-items: flex-start; text-align: left; }
+  .stat-icon { width: 30px; height: 30px; }
+  .stat-val { font-size: 16px; }
+
+  /* Toolbar Elements (Stack vertically on tiny screens) */
+  .toolbar-right { grid-template-columns: 1fr; }
+  .btn-start-queue, #refresh-queue-btn { grid-column: span 1; }
+
+  /* Typography & Layout Adjustments */
+  .topbar-title { font-size: 13px; }
+  .form-group > div select { padding: 8px 2px; font-size: 12px; }
+  .cal-day { font-size: 11px; }
+}
+
+@media (max-width: 1024px) {
+  .layout { padding: 16px 16px 80px; gap: 16px; }
+}
