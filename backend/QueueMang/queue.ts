@@ -204,7 +204,7 @@ router.post('/inject-appointment', async (req: Request, res: Response) => {
 router.post('/:id/action', async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id as string, 10);
-        const { action, status, amount_paid, notes, prescription, follow_up_date } = req.body; 
+        const { action, status, amount_paid, notes, prescription, follow_up_date } = req.body;
         const now = new Date().toISOString();
 
         const entry = queueDb.selectOne('queue_entries', 'id = ?', [id]) as any;
@@ -224,7 +224,7 @@ router.post('/:id/action', async (req: Request, res: Response) => {
                         token_number ASC
                     LIMIT 1
                 `, [entry.queue_date]) as any[];
-                
+
                 if (!firstWaiting.length) return res.json({ success: false, message: 'No waiting patients' });
                 const firstId = firstWaiting[0].id;
                 queueDb.update('queue_entries', { status: 'CALLED', called_at: now, updated_at: now }, 'id = ?', [firstId]);
@@ -243,7 +243,7 @@ router.post('/:id/action', async (req: Request, res: Response) => {
                 break;
             }
 
-           case 'complete': {
+            case 'complete': {
                 const finalStatus = status || 'DONE';
                 updates.status = finalStatus;
                 updates.served_at = now;
@@ -257,9 +257,10 @@ router.post('/:id/action', async (req: Request, res: Response) => {
                         try {
                             const paymentAmount = amount_paid ? parseFloat(amount_paid) : 0;
                             const paymentTag = paymentAmount > 0 ? `💰 Amount Paid: ₹${paymentAmount}` : null;
-                            
-                            patientDb.insert('patient_visits', {
+
+                            const visitPayload = {
                                 patient_id: entry.patient_id,
+                                queue_entry_id: entry.id,
                                 visit_date: now,
                                 visit_type: entry.visit_type || 'OPD',
                                 doctor: entry.doctor || null,
@@ -268,8 +269,15 @@ router.post('/:id/action', async (req: Request, res: Response) => {
                                 prescription: prescription || null,
                                 follow_up_date: follow_up_date || null,
                                 notes: paymentTag,
-                                created_at: now,
-                            });
+                            };
+
+                            const existingVisit = patientDb.selectOne('patient_visits', 'queue_entry_id = ?', [entry.id]) as any;
+
+                            if (existingVisit) {
+                                patientDb.update('patient_visits', visitPayload, 'id = ?', [existingVisit.id]);
+                            } else {
+                                patientDb.insert('patient_visits', { ...visitPayload, created_at: now });
+                            }
                         } catch (ve) {
                             console.error('[Visit Log Error]', ve);
                         }
@@ -279,11 +287,10 @@ router.post('/:id/action', async (req: Request, res: Response) => {
                         queueDb.update('appointments', { status: apptStatus, updated_at: now }, 'id = ?', [entry.appointment_id]);
                     }
                 }
-                
                 if (finalStatus === 'MISSED') updates.status = 'MISSED';
                 break;
             }
-            
+
             case 'noshow': {
                 updates.status = 'NOSHOW';
                 updates.served_at = now;

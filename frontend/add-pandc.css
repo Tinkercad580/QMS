@@ -266,6 +266,9 @@ ul { list-style: none; }
   display: flex; flex-direction: column;
   box-shadow: var(--shadow-lg);
   animation: slideUp 0.22s cubic-bezier(0.16,1,0.3,1);
+
+  /* Add this line to clip the sticky footer inside the rounded corners */
+  overflow: hidden;
 }
 .modal-sm { max-width: 520px; }
 .modal-header {
@@ -321,10 +324,24 @@ ul { list-style: none; }
 .form-group textarea.error { border-color: var(--error); box-shadow: 0 0 0 3px rgba(220,38,38,0.1); }
 .field-error { font-size: 11px; color: var(--error); }
 .form-actions {
-  display: flex; justify-content: flex-end; gap: 10px;
-  padding-top: 16px; border-top: 1px solid var(--border);
-  margin-top: 8px;
+  display: flex; 
+  justify-content: flex-end; 
+  gap: 10px;
+  
+  /* 1. Make it sticky */
+  position: sticky;
+  bottom: -24px; /* Stick perfectly to the bottom of the scroll container */
+  z-index: 10;   /* Keep it above the scrolling form fields */
+  
+  /* 2. Style it like a proper fixed footer */
+  background: var(--surface); /* Solid white background to hide text scrolling behind it */
+  border-top: 1px solid var(--border);
+  padding: 16px 24px;
+  
+  /* 3. Pull it out to cover the padding of the parent .modal-body */
+  margin: 16px -24px -24px -24px; 
 }
+
 .spinner {
   width: 16px; height: 16px; border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.3);

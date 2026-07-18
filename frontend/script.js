@@ -571,59 +571,109 @@ function renderDrawerTab(tab) {
     }
 
     if (tab === 'visits') {
-        const visits = p.visits || [];
-        if (!visits.length) {
-            body.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📋</div>No visit records yet.</div>`;
-            return;
-        }
-        body.innerHTML = visits.map(v => `
-      <div class="visit-item">
-        <div class="visit-item-header">
-          <span class="visit-date">${fmtDate(v.visit_date)} ${v.visit_date ? fmtTime(v.visit_date) : ''}</span>
-          <span class="visit-type-badge">${v.visit_type || 'OPD'}</span>
-        </div>
-        ${v.doctor ? `<div class="visit-doctor">Dr. ${escHtml(v.doctor)}</div>` : ''}
-        ${v.complaint ? `<div class="visit-complaint"><strong>Complaint:</strong> ${escHtml(v.complaint)}</div>` : ''}
-        ${v.diagnosis ? `<div class="visit-complaint"><strong>Diagnosis:</strong> ${escHtml(v.diagnosis)}</div>` : ''}
-        ${v.prescription ? `<div class="visit-complaint"><strong>Rx:</strong> ${escHtml(v.prescription)}</div>` : ''}
-        ${v.notes ? `<div class="visit-complaint" style="color:var(--text-muted)">${escHtml(v.notes)}</div>` : ''}
-      </div>
-    `).join('');
-    }
+        body.innerHTML = `<div class="empty-state">Loading visit history…</div>`;
 
-    if (tab === 'queue') {
-        // Load queue history for this patient
         apiFetch(`/api/dashboard/patient-queue?patient_id=${p.id}`)
             .then(data => {
-                const entries = data.data || [];
-                if (!entries.length) {
-                    body.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🕓</div>No queue history found.</div>`;
+                const queueEntries = data.data || [];
+                const visitRecords = p.visits || [];
+
+                // Index queue entries by their own id (reliable, no timestamp collisions)
+                const queueById = {};
+                queueEntries.forEach(e => { queueById[e.id] = e; });
+
+                const merged = [];
+                const usedQueueIds = new Set();
+
+                // 1. Merge visits with their matching queue entry via queue_entry_id
+                visitRecords.forEach(v => {
+                    const match = v.queue_entry_id ? queueById[v.queue_entry_id] : null;
+                    if (match) usedQueueIds.add(match.id);
+
+                    merged.push({
+                        sortKey: new Date(v.visit_date).getTime() || 0,
+                        dateLabel: fmtDate(v.visit_date),
+                        timeLabel: v.visit_date ? fmtTime(v.visit_date) : '',
+                        visitType: (match && match.ticket_type) || v.visit_type || 'OPD',
+                        status: match ? match.status : null,
+                        tokenNumber: match ? match.token_number : null,
+                        doctor: v.doctor || (match && match.doctor),
+                        complaint: v.complaint || (match && match.chief_complaint),
+                        diagnosis: v.diagnosis,
+                        prescription: v.prescription,
+                        followUp: v.follow_up_date || null,
+                        notes: (v.notes && !v.notes.startsWith('💰')) ? v.notes : null,
+                        fee: match ? match.fee : null,
+                        amountPaid: match ? match.amount_paid : null,
+                    });
+                });
+
+                // 2. Add any queue entries that had NO matching visit record (e.g. NOSHOW, MISSED, or unlinked)
+                queueEntries.forEach(e => {
+                    if (usedQueueIds.has(e.id)) return;
+                    merged.push({
+                        sortKey: new Date(e.served_at || e.queue_date).getTime() || 0,
+                        dateLabel: fmtDate(e.served_at || e.queue_date),
+                        timeLabel: e.served_at ? fmtTime(e.served_at) : '',
+                        visitType: e.ticket_type,
+                        status: e.status,
+                        tokenNumber: e.token_number,
+                        doctor: e.doctor,
+                        complaint: e.chief_complaint,
+                        diagnosis: null,
+                        prescription: null,
+                        followUp: e.follow_up_date || null,
+                        notes: null,
+                        fee: e.fee,
+                        amountPaid: e.amount_paid,
+                    });
+                });
+
+                // 3. Sort latest first
+                merged.sort((a, b) => b.sortKey - a.sortKey);
+
+                if (!merged.length) {
+                    body.innerHTML = `<div class="empty-state"><div class="empty-state-icon"></div>No visit or queue records yet.</div>`;
                     return;
                 }
-                body.innerHTML = entries.map(e => `
-          <div class="visit-item">
-            <div class="visit-item-header">
-              <span class="visit-date">${fmtDate(e.queue_date)}</span>
-              ${statusBadge(e.status)}
-            </div>
-            <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap">
-              <span class="token-pill">#${e.token_number}</span>
-              ${e.ticket_type ? `<span style="font-size:11px;color:var(--text-muted)">${e.ticket_type}</span>` : ''}
-              ${e.doctor ? `<span style="font-size:11px;color:var(--text-muted)">Dr. ${escHtml(e.doctor)}</span>` : ''}
-            </div>
-            <div style="margin-top:6px;display:flex;gap:12px">
-              <span style="font-size:12px">Fee: <strong style="font-family:var(--font-mono)">${fmtMoney(e.fee)}</strong></span>
-              <span style="font-size:12px;color:var(--success)">Paid: <strong style="font-family:var(--font-mono)">${fmtMoney(e.amount_paid)}</strong></span>
-            </div>
-            ${e.chief_complaint ? `<div style="font-size:12px;color:var(--text-muted);margin-top:4px">${escHtml(e.chief_complaint)}</div>` : ''}
-          </div>
-        `).join('');
+
+                body.innerHTML = merged.map(item => `
+  <div class="visit-card">
+    ${item.tokenNumber ? `<div class="visit-token-corner">
+        <span class="token-pill">#${item.tokenNumber}</span>
+      </div>` : ''}
+
+    <div class="visit-row-1">
+      <span class="visit-date">${item.dateLabel}${item.timeLabel ? ' ' + item.timeLabel : ''}</span>
+      ${item.status ? statusBadge(item.status) : ''}
+      <span class="visit-type-badge">${item.visitType || 'OPD'}</span>
+    </div>
+
+    ${item.doctor ? `<div class="visit-row-doctor">Dr. ${escHtml(item.doctor)}</div>` : ''}
+
+    ${item.diagnosis ? `<div class="visit-row-label"><strong>Diagnosis</strong>${escHtml(item.diagnosis)}</div>` : ''}
+
+    ${item.prescription ? `<div class="visit-row-label"><strong>Rx</strong>${escHtml(item.prescription)}</div>` : ''}
+
+    ${item.followUp ? `<div class="visit-row-followup"><strong>Next Follow-up</strong>${fmtDate(item.followUp)}</div>` : ''}
+
+    ${item.complaint ? `<div class="visit-row-label"><strong>Complaint</strong>${escHtml(item.complaint)}</div>` : ''}
+
+    ${(item.fee !== null || item.amountPaid !== null) ? `<div class="visit-row-fee">
+        <span>Fee: <strong>${fmtMoney(item.fee)}</strong></span>
+        <span class="paid-amt">Paid: <strong>${fmtMoney(item.amountPaid)}</strong></span>
+      </div>` : ''}
+
+    ${item.notes ? `<div class="visit-row-notes">${escHtml(item.notes)}</div>` : ''}
+  </div>
+`).join('');
             })
             .catch(() => {
-                body.innerHTML = `<div class="empty-state">Could not load queue history.</div>`;
+                body.innerHTML = `<div class="empty-state">Could not load visit history.</div>`;
             });
     }
 }
+
 
 function closeDrawer() {
     $('drawerOverlay').classList.remove('open');

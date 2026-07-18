@@ -74,6 +74,7 @@ class DynamicDatabaseService {
     // Initialize schema if provided
     if (schema) {
       this.initializeSchema(schema);
+      this.runMigrations();
     }
 
     this.setupSmartBackup();
@@ -83,7 +84,7 @@ class DynamicDatabaseService {
   }
 
   /**
-   * Get or create database instance
+   * Get or create datinitializeSchemaabase instance
    * @param dbName - Database name (without .db extension)
    * @param schema - Optional SQL schema (only used on first creation)
    * @returns Database instance
@@ -124,6 +125,25 @@ class DynamicDatabaseService {
       throw error;
     }
   }
+
+  private runMigrations(): void {
+    try {
+      const tableExists = this.db.prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='patient_visits'`
+      ).get();
+      if (!tableExists) return;
+
+      const cols = this.db.prepare(`PRAGMA table_info(patient_visits)`).all() as any[];
+      if (!cols.some(c => c.name === 'queue_entry_id')) {
+        this.db.exec(`ALTER TABLE patient_visits ADD COLUMN queue_entry_id INTEGER`);
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_visits_queue_entry ON patient_visits(queue_entry_id)`);
+        console.log(`✅ ${this.dbName}: Migration applied — queue_entry_id added to patient_visits`);
+      }
+    } catch (error: any) {
+      console.error(`❌ ${this.dbName}: Migration failed:`, error.message);
+    }
+  }
+
 
   private setupSmartBackup(): void {
     this.backupTimer = setInterval(() => {

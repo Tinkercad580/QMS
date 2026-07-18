@@ -236,8 +236,12 @@ function bindEvents() {
   // Drawer close
   $('close-drawer').addEventListener('click', closeDrawer);
   drawerOverlay.addEventListener('click', closeDrawer);
-  $('drawer-edit-btn').addEventListener('click', () => {
-    if (state.activeDrawerPatient) { closeDrawer(); openModal(state.activeDrawerPatient.id); }
+   $('drawer-edit-btn').addEventListener('click', () => {
+    if (state.activeDrawerPatient) {
+      const patientId = state.activeDrawerPatient.id;
+      closeDrawer();
+      openModal(patientId);
+    }
   });
   $('drawer-delete-btn').addEventListener('click', () => {
     if (state.activeDrawerPatient) confirmDelete(state.activeDrawerPatient.id);

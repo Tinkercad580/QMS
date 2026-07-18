@@ -44,20 +44,22 @@ export const PATIENT_SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_patients_created_at ON patients(created_at DESC);
 
   CREATE TABLE IF NOT EXISTS patient_visits (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    patient_id      INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-    visit_date      TEXT NOT NULL,
-    visit_type      TEXT,
-    doctor          TEXT,
-    complaint       TEXT,
-    diagnosis       TEXT,
-    prescription    TEXT,
-    follow_up_date  TEXT,
-    notes           TEXT,
-    created_at      TEXT NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_visits_patient_id ON patient_visits(patient_id);
-  CREATE INDEX IF NOT EXISTS idx_visits_visit_date ON patient_visits(visit_date DESC);
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    queue_entry_id INTEGER,
+    visit_date TEXT NOT NULL,
+    visit_type TEXT,
+    doctor TEXT,
+    complaint TEXT,
+    diagnosis TEXT,
+    prescription TEXT,
+    follow_up_date TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_visits_patient_id ON patient_visits(patient_id);
+    CREATE INDEX IF NOT EXISTS idx_visits_visit_date ON patient_visits(visit_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_visits_queue_entry ON patient_visits(queue_entry_id);
 `;
 
 // ─── QUEUE SCHEMA (replaces both old definitions) ────────────

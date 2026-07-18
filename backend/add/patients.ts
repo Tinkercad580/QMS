@@ -8,8 +8,8 @@ const db = DynamicDatabaseService.getDatabase('patients', PATIENT_SCHEMA);
 
 function generatePatientId(): string {
     const now = new Date();
-    const yr  = now.getFullYear().toString().slice(-2);
-    const mo  = String(now.getMonth() + 1).padStart(2, '0');
+    const yr = now.getFullYear().toString().slice(-2);
+    const mo = String(now.getMonth() + 1).padStart(2, '0');
     const rand = Math.floor(Math.random() * 9000 + 1000);
     return `P${yr}${mo}-${rand}`;
 }
@@ -47,54 +47,38 @@ router.post('/', (req: Request, res: Response) => {
 
         const now = new Date().toISOString();
         const data: Record<string, any> = {
-            patient_id:                   body.patient_id?.trim() || generatePatientId(),
-            full_name:                    body.full_name.trim(),
-            mobile:                       body.mobile?.trim() || null,
-            alt_mobile:                   body.alt_mobile?.trim() || null,
-            email:                        body.email?.trim() || null,
-            dob:                          body.dob || null,
-            age:                          body.age ? parseInt(body.age, 10) : null,
-            gender:                       body.gender || null,
-            blood_group:                  body.blood_group || null,
-            height_cm:                    body.height_cm ? parseFloat(body.height_cm) : null,
-            weight_kg:                    body.weight_kg ? parseFloat(body.weight_kg) : null,
-            allergies:                    body.allergies?.trim() || null,
-            chronic_conditions:           body.chronic_conditions?.trim() || null,
-            current_medications:          body.current_medications?.trim() || null,
-            address:                      body.address?.trim() || null,
-            city:                         body.city?.trim() || null,
-            pin_code:                     body.pin_code?.trim() || null,
-            emergency_contact_name:       body.emergency_contact_name?.trim() || null,
-            emergency_contact_mobile:     body.emergency_contact_mobile?.trim() || null,
-            emergency_contact_relation:   body.emergency_contact_relation || null,
-            visit_type:                   body.visit_type || null,
-            department:                   body.department?.trim() || null,
-            assigned_doctor:              body.assigned_doctor?.trim() || null,
-            insurance_policy:             body.insurance_policy?.trim() || null,
-            chief_complaint:              body.chief_complaint?.trim() || null,
-            notes:                        body.notes?.trim() || null,
-            created_at:                   now,
-            updated_at:                   now,
+            patient_id: body.patient_id?.trim() || generatePatientId(),
+            full_name: body.full_name.trim(),
+            mobile: body.mobile?.trim() || null,
+            alt_mobile: body.alt_mobile?.trim() || null,
+            email: body.email?.trim() || null,
+            dob: body.dob || null,
+            age: body.age ? parseInt(body.age, 10) : null,
+            gender: body.gender || null,
+            blood_group: body.blood_group || null,
+            height_cm: body.height_cm ? parseFloat(body.height_cm) : null,
+            weight_kg: body.weight_kg ? parseFloat(body.weight_kg) : null,
+            allergies: body.allergies?.trim() || null,
+            chronic_conditions: body.chronic_conditions?.trim() || null,
+            current_medications: body.current_medications?.trim() || null,
+            address: body.address?.trim() || null,
+            city: body.city?.trim() || null,
+            pin_code: body.pin_code?.trim() || null,
+            emergency_contact_name: body.emergency_contact_name?.trim() || null,
+            emergency_contact_mobile: body.emergency_contact_mobile?.trim() || null,
+            emergency_contact_relation: body.emergency_contact_relation || null,
+            visit_type: body.visit_type || null,
+            department: body.department?.trim() || null,
+            assigned_doctor: body.assigned_doctor?.trim() || null,
+            insurance_policy: body.insurance_policy?.trim() || null,
+            chief_complaint: body.chief_complaint?.trim() || null,
+            notes: body.notes?.trim() || null,
+            created_at: now,
+            updated_at: now,
         };
 
-        const insertedId = db.transaction(() => {
-            const id = db.insert('patients', data);
-            if (body.chief_complaint || body.visit_type) {
-                db.insert('patient_visits', {
-                    patient_id:   id,
-                    visit_date:   now,
-                    visit_type:   body.visit_type || 'Walk-in',
-                    doctor:       body.assigned_doctor || null,
-                    complaint:    body.chief_complaint || null,
-                    diagnosis:    null,
-                    prescription: null,
-                    notes:        body.notes || null,
-                    created_at:   now,
-                });
-            }
-            return id;
-        });
-
+        const insertedId = db.insert('patients', data);
+        
         res.status(201).json({ success: true, id: insertedId, message: 'Patient created' });
     } catch (e: any) {
         console.error('POST /patients failed:', e.message);
@@ -145,16 +129,16 @@ router.post('/visits', (req: Request, res: Response) => {
 
         const now = new Date().toISOString();
         const data = {
-            patient_id:     parseInt(body.patient_id, 10),
-            visit_date:     body.visit_date || now,
-            visit_type:     body.visit_type || 'OPD',
-            doctor:         body.doctor?.trim() || null,
-            complaint:      body.complaint?.trim() || null,
-            diagnosis:      body.diagnosis?.trim() || null,
-            prescription:   body.prescription?.trim() || null,
+            patient_id: parseInt(body.patient_id, 10),
+            visit_date: body.visit_date || now,
+            visit_type: body.visit_type || 'OPD',
+            doctor: body.doctor?.trim() || null,
+            complaint: body.complaint?.trim() || null,
+            diagnosis: body.diagnosis?.trim() || null,
+            prescription: body.prescription?.trim() || null,
             follow_up_date: body.follow_up_date || null,
-            notes:          body.notes?.trim() || null,
-            created_at:     now,
+            notes: body.notes?.trim() || null,
+            created_at: now,
         };
 
         const id = db.insert('patient_visits', data);
@@ -179,7 +163,7 @@ router.get('/:id', (req: Request, res: Response) => {
 // 7️⃣ PUT /:id
 router.put('/:id', (req: Request, res: Response) => {
     try {
-        const id   = parseInt(req.params.id as string, 10);
+        const id = parseInt(req.params.id as string, 10);
         const body = req.body;
 
         const existing = db.selectOne('patients', 'id = ?', [id]);
@@ -191,11 +175,11 @@ router.put('/:id', (req: Request, res: Response) => {
 
         const updates: Record<string, any> = { updated_at: new Date().toISOString() };
         const editable = [
-            'full_name','mobile','alt_mobile','email','dob','age','gender','blood_group',
-            'height_cm','weight_kg','allergies','chronic_conditions','current_medications',
-            'address','city','pin_code','emergency_contact_name','emergency_contact_mobile',
-            'emergency_contact_relation','visit_type','department','assigned_doctor',
-            'insurance_policy','chief_complaint','notes','patient_id',
+            'full_name', 'mobile', 'alt_mobile', 'email', 'dob', 'age', 'gender', 'blood_group',
+            'height_cm', 'weight_kg', 'allergies', 'chronic_conditions', 'current_medications',
+            'address', 'city', 'pin_code', 'emergency_contact_name', 'emergency_contact_mobile',
+            'emergency_contact_relation', 'visit_type', 'department', 'assigned_doctor',
+            'insurance_policy', 'chief_complaint', 'notes', 'patient_id',
         ];
         editable.forEach(f => {
             if (body[f] !== undefined) updates[f] = body[f] === '' ? null : body[f];
@@ -249,16 +233,16 @@ visitsRouter.post('/', (req: Request, res: Response) => {
         if (!body.patient_id) return res.status(400).json({ success: false, message: 'patient_id required' });
         const now = new Date().toISOString();
         const data = {
-            patient_id:     parseInt(body.patient_id, 10),
-            visit_date:     body.visit_date || now,
-            visit_type:     body.visit_type || 'OPD',
-            doctor:         body.doctor?.trim() || null,
-            complaint:      body.complaint?.trim() || null,
-            diagnosis:      body.diagnosis?.trim() || null,
-            prescription:   body.prescription?.trim() || null,
+            patient_id: parseInt(body.patient_id, 10),
+            visit_date: body.visit_date || now,
+            visit_type: body.visit_type || 'OPD',
+            doctor: body.doctor?.trim() || null,
+            complaint: body.complaint?.trim() || null,
+            diagnosis: body.diagnosis?.trim() || null,
+            prescription: body.prescription?.trim() || null,
             follow_up_date: body.follow_up_date || null,
-            notes:          body.notes?.trim() || null,
-            created_at:     now,
+            notes: body.notes?.trim() || null,
+            created_at: now,
         };
         const id = db.insert('patient_visits', data);
         res.status(201).json({ success: true, id, message: 'Visit logged' });
