@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OPD Management</title>
+  <link rel="stylesheet" href="QueueMang.css" />
+  <link rel="stylesheet" href="OPD.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
+</head>
+
+<body>
+
+  <!-- Shared dropdown suggestion lists for the medicine rows (type-to-filter, still free text) -->
+  <datalist id="med-name-options">
+    <option value="Paracetamol 500mg"></option>
+    <option value="Ibuprofen 400mg"></option>
+    <option value="Diclofenac 50mg"></option>
+    <option value="Aceclofenac + Paracetamol"></option>
+    <option value="Etoricoxib 90mg"></option>
+    <option value="Tramadol 50mg"></option>
+    <option value="Calcium + Vitamin D3"></option>
+    <option value="Methylcobalamin"></option>
+    <option value="Pantoprazole 40mg"></option>
+    <option value="Chymoral Forte"></option>
+  </datalist>
+  <datalist id="med-dose-options">
+    <option value="1 tablet"></option>
+    <option value="2 tablets"></option>
+    <option value="1 capsule"></option>
+    <option value="5 ml"></option>
+    <option value="10 ml"></option>
+    <option value="1 tsp"></option>
+    <option value="1 injection"></option>
+    <option value="Apply locally"></option>
+    <option value="1 drop"></option>
+    <option value="2 drops"></option>
+  </datalist>
+  <datalist id="med-frequency-options">
+    <option value="1-0-0"></option>
+    <option value="0-1-0"></option>
+    <option value="0-0-1"></option>
+    <option value="1-1-1"></option>
+    <option value="1-0-1"></option>
+    <option value="1-1-0"></option>
+    <option value="0-1-1"></option>
+    <option value="Once daily"></option>
+    <option value="Twice daily"></option>
+    <option value="Thrice daily"></option>
+    <option value="Every 6 hours"></option>
+    <option value="Every 8 hours"></option>
+    <option value="SOS (as needed)"></option>
+    <option value="Stat"></option>
+  </datalist>
+  <datalist id="med-duration-options">
+    <option value="3 days"></option>
+    <option value="5 days"></option>
+    <option value="7 days"></option>
+    <option value="10 days"></option>
+    <option value="14 days"></option>
+    <option value="1 month"></option>
+    <option value="Until finished"></option>
+    <option value="SOS (as needed)"></option>
+  </datalist>
+  <datalist id="med-route-options">
+    <option value="Oral"></option>
+    <option value="Topical"></option>
+    <option value="IV"></option>
+    <option value="IM"></option>
+    <option value="Subcutaneous"></option>
+    <option value="Inhalation"></option>
+    <option value="Eye drops"></option>
+    <option value="Ear drops"></option>
+    <option value="Nasal"></option>
+  </datalist>
+  <datalist id="med-instruction-options">
+    <option value="After food"></option>
+    <option value="Before food"></option>
+    <option value="With food"></option>
+    <option value="Empty stomach"></option>
+    <option value="At bedtime"></option>
+    <option value="Before breakfast"></option>
+    <option value="As needed (SOS)"></option>
+  </datalist>
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <svg class="topbar-logo" viewBox="0 0 32 32" fill="none">
+        <rect width="32" height="32" rx="8" fill="#2563EB" />
+        <path d="M8 10h16M8 16h10M8 22h13" stroke="white" stroke-width="2" stroke-linecap="round" />
+      </svg>
+      <span class="topbar-title">OPD</span>
+      <span class="topbar-badge" id="tenant-badge">Live</span>
+    </div>
+    <div class="topbar-right">
+      <a href="index.html" class="btn btn-sm"
+        style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; text-decoration: none;">
+        <span class="btn-text">Dashboard</span>
+      </a>
+      <a href="QueueMang.html" class="btn btn-sm"
+        style="background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; text-decoration: none;">
+        <span class="btn-text">Queue</span>
+      </a>
+      <button class="btn btn-primary" id="new-opd-btn">
+        <svg viewBox="0 0 20 20" fill="none">
+          <path d="M10 4v12M4 10h12" stroke="white" stroke-width="2" stroke-linecap="round" />
+        </svg>
+        <span class="btn-text">New OPD Record</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="main-col" style="width:100%">
+
+      <!-- OPD FORM (styled like the clinic's paper prescription sheet) -->
+      <div class="opd-sheet" id="opd-sheet">
+        <div class="opd-sheet-header">
+          <div>
+            <h2 class="modal-title">OPD Record</h2>
+            <p class="modal-sub">Fill in consultation details for the current patient</p>
+          </div>
+          <div class="opd-record-id" id="opd-record-id"></div>
+        </div>
+
+        <form id="opd-form" novalidate>
+          <input type="hidden" id="of-id" />
+          <input type="hidden" id="of-queue-entry-id" />
+          <input type="hidden" id="of-appointment-id" />
+          <input type="hidden" id="of-patient-id" />
+
+          <div class="form-grid">
+            <div class="form-group required">
+              <label>Patient Name *</label>
+              <input type="text" id="of-name" name="patient_name" placeholder="Full name" />
+              <span class="field-error" id="of-err-name"></span>
+            </div>
+            <div class="form-group">
+              <label>Mobile No.</label>
+              <input type="tel" id="of-mobile" name="mobile" placeholder="+91 …" />
+            </div>
+            <div class="form-group">
+              <label>Age</label>
+              <input type="number" id="of-age" name="age" min="0" placeholder="Age" />
+            </div>
+            <div class="form-group">
+              <label>Gender</label>
+              <select id="of-gender" name="gender">
+                <option value="">—</option>
+                <option value="M">Male</option>
+                <option value="F">Female</option>
+                <option value="O">Other</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Date</label>
+              <input type="date" id="of-visit-date" name="visit_date" />
+            </div>
+            <div class="form-group">
+              <label>Referred by</label>
+              <input type="text" id="of-doctor" name="doctor_name" placeholder="Dr. Name" />
+            </div>
+          </div>
+
+          <div class="opd-divider"></div>
+
+          <div class="form-group full-width" style="margin-bottom:12px">
+            <label>Vitals / Measurements</label>
+            <div class="opd-vitals-grid">
+              <div class="opd-vital-box">
+                <label>BP</label>
+                <div class="opd-vital-input-row"><input type="text" id="of-vital-bp" placeholder="120/80" /><span class="opd-vital-unit">mmHg</span></div>
+              </div>
+              <div class="opd-vital-box">
+                <label>Pulse</label>
+                <div class="opd-vital-input-row"><input type="text" id="of-vital-pulse" placeholder="78" /><span class="opd-vital-unit">bpm</span></div>
+              </div>
+              <div class="opd-vital-box">
+                <label>Weight</label>
+                <div class="opd-vital-input-row"><input type="text" id="of-vital-weight" placeholder="72" /><span class="opd-vital-unit">kg</span></div>
+              </div>
+              <div class="opd-vital-box">
+                <label>Height</label>
+                <div class="opd-vital-input-row"><input type="text" id="of-vital-height" placeholder="175" /><span class="opd-vital-unit">cm</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label>History / Complaints</label>
+              <textarea id="of-history" name="history" rows="2" placeholder="e.g. Knee pain…"></textarea>
+            </div>
+            <div class="form-group full-width">
+              <label>Previous Illness</label>
+              <textarea id="of-prev-illness" name="previous_illness" rows="2"
+                placeholder="e.g. Hypertension, Diabetes mellitus…"></textarea>
+            </div>
+            <div class="form-group full-width">
+              <label>Signs / Examination Details</label>
+              <textarea id="of-signs" name="signs_examination" rows="2"></textarea>
+            </div>
+            <div class="form-group full-width">
+              <label>Diagnosis</label>
+              <textarea id="of-diagnosis" name="diagnosis" rows="2"></textarea>
+            </div>
+            <div class="form-group full-width">
+              <label>Investigations Advised</label>
+              <div class="opd-invest-list" id="opd-invest-list"></div>
+              <button type="button" class="btn btn-ghost btn-sm" id="opd-add-invest-btn">+ Add Investigation</button>
+            </div>
+            <div class="form-group full-width">
+              <label>Previous Investigations</label>
+              <textarea id="of-invest-prev" name="previous_investigations" rows="2"></textarea>
+            </div>
+            <div class="form-group full-width">
+              <label>Prescription / Medicines</label>
+              <div class="opd-med-list" id="opd-med-list"></div>
+              <button type="button" class="btn btn-ghost btn-sm" id="opd-add-med-btn">+ Add Medicine</button>
+            </div>
+            <div class="form-group full-width">
+              <label>Advice</label>
+              <textarea id="of-advice" name="advice" rows="2" placeholder="General advice for the patient…"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Follow-up Date</label>
+              <input type="date" id="of-followup" name="follow_up_date" />
+            </div>
+            <div class="form-group full-width">
+              <label>Notes</label>
+              <textarea id="of-notes" name="notes" rows="2"
+                placeholder="Please follow-up in case of emergency with prior appointment."></textarea>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="opd-clear-btn">Clear</button>
+            <button type="button" class="btn btn-secondary" id="opd-print-btn">🖨️ Save & Print Prescription</button>
+            <button type="submit" class="btn btn-primary">Save OPD Record</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- OPD HISTORY LIST -->
+      <div class="queue-toolbar" style="margin-top:20px">
+        <div class="toolbar-left">
+          <span class="section-title">Recent OPD Records</span>
+          <span class="queue-badge" id="opd-count-badge">0 records</span>
+        </div>
+        <div class="toolbar-right">
+          <input type="text" class="filter-select" id="opd-search" placeholder="Search by patient name/mobile…" />
+        </div>
+      </div>
+      <div class="queue-list" id="opd-list">
+        <div class="empty-queue">
+          <p>No OPD records yet.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="OPD.js"></script>
+</body>
+
+</html>

@@ -466,7 +466,7 @@ async function openDrawer(id) {
     ['Current Medications', p.current_medications, true],
     ['Chief Complaint', p.chief_complaint, true],
     ['Department', p.department],
-    ['Doctor', p.assigned_doctor],
+    ['Referred by', p.assigned_doctor],
     ['Visit Type', p.visit_type],
     ['Insurance', p.insurance_policy],
     ['Notes', p.notes, true],

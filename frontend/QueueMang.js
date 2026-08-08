@@ -6,6 +6,26 @@ const API_BASE = '';
 const QUEUE_API = `${API_BASE}/api/queue`;
 const APPT_API = `${API_BASE}/api/appointments`;
 const PAT_API = `${API_BASE}/api/patients`;
+const OPD_API = `${API_BASE}/api/opd`;
+const DEFAULT_REFERRED_BY = 'Dr. Jayaraja Puthran';
+
+const CLINIC_INFO = {
+  name: 'Jai Ganesh Nursing Home',
+  sub: 'Medical, Surgical, Orthopaedic Trauma Centre',
+  regNo: 'Hosp. Reg. No. TMC / Zone - A / 579',
+  address: 'R.S.C. 15, Plot No. 67/68, Opp. Louis Bldg., Veer Savarkar Nagar, Thane (W) - 400 606.',
+  mobile: '9321467944',
+  doctorQualification: 'M.B.B.S., D. Ortho. (C.P.S. Bombay)',
+  doctorSpecialty: 'Bone Fracture Specialist · Trauma and Spine Specialist',
+  doctorRegNo: 'Reg. No. 77425',
+};
+
+// Common investigations for an Ortho / Bone Fracture / Trauma & Spine practice, plus general labs.
+const INVESTIGATION_OPTIONS = [
+  'X-Ray', 'MRI', 'CT Scan', 'Bone Density (DEXA)', 'Ultrasound',
+  'CBC', 'Blood Sugar (Fasting/PP)', 'HbA1c', 'ESR/CRP', 'Serum Calcium', 'Vitamin D',
+  'ECG', 'Other',
+];
 
 const today = () => {
   const d = new Date();
@@ -156,6 +176,7 @@ function renderQueue() {
   // Group into sections
   const pending = list.filter(x => x.status === 'WAITING');
   const ongoing = list.filter(x => ['CALLED', 'SERVING'].includes(x.status));
+  const onHold = list.filter(x => x.status === 'HOLD');
   const completed = list.filter(x => ['DONE', 'NOSHOW', 'MISSED'].includes(x.status));
 
   let html = '';
@@ -165,6 +186,13 @@ function renderQueue() {
       <span class="qs-dot ongoing-dot"></span>Ongoing (${ongoing.length})
     </div>`;
     html += ongoing.map((q, i) => queueCardHtml(q, i)).join('');
+  }
+
+  if (onHold.length) {
+    html += `<div class="queue-section-label ongoing-label" style="color:#7c3aed;">
+      <span class="qs-dot" style="background:#7c3aed;"></span>On Hold — Gone for Report (${onHold.length})
+    </div>`;
+    html += onHold.map((q, i) => queueCardHtml(q, i)).join('');
   }
 
   if (pending.length) {
@@ -296,14 +324,21 @@ function queueCardHtml(q, i) {
       <svg viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>`;
 
+  const btnResume = `
+    <button class="qbtn qbtn-requeue" style="background:#f5f3ff; color:#7c3aed;" data-action="resume" data-id="${q.id}" title="Back with report — return to Waiting">
+      <svg viewBox="0 0 18 18" fill="none"><path d="M4 9h7M8 5l3 4-3 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>`;
+
   if (q.status === 'WAITING') {
     actions = btnCall + btnSkip + btnRemove;
   } else if (q.status === 'CALLED' || q.status === 'SERVING') {
     actions = btnDone + btnNoshow;
+  } else if (q.status === 'HOLD') {
+    actions = btnResume + btnRemove;
   } else if (q.status === 'MISSED') {
     actions = btnRequeue + btnRemove;
   } else if (q.status === 'DONE' || q.status === 'NOSHOW') {
-    actions = btnReopen; 
+    actions = btnReopen;
   }
 
   const priorityTag = q.priority !== 'NORMAL'
@@ -313,6 +348,10 @@ function queueCardHtml(q, i) {
   const amountTag = q.amount_paid > 0
     ? `<span class="qmeta-item fee-paid">₹${q.amount_paid}</span>`
     : (q.fee > 0 ? `<span class="qmeta-item fee-pending">₹${q.fee}</span>` : '');
+
+  const holdTag = q.status === 'HOLD' && q.hold_reason
+    ? `<span class="qmeta-item" style="color:#7c3aed; background:#f5f3ff; padding:2px 6px; border-radius:4px;" title="${esc(q.hold_reason)}">⏸ ${esc(q.hold_reason)}</span>`
+    : '';
 
   return `
     <div class="queue-card status-${q.status} priority-${q.priority}" data-id="${q.id}" style="animation-delay:${i * 15}ms">
@@ -327,6 +366,7 @@ function queueCardHtml(q, i) {
           ${q.doctor ? `<span class="qmeta-item"><svg viewBox="0 0 14 14" fill="none" width="11" height="11"><circle cx="7" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><path d="M2 12c0-2.21 2.239-4 5-4s5 1.79 5 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>${esc(q.doctor)}</span>` : ''}
           ${q.mobile ? `<span class="qmeta-item" style="color:var(--secondary); font-weight:600; background:var(--secondary-l); padding:2px 6px; border-radius:4px;"><svg viewBox="0 0 14 14" fill="none" width="11" height="11"><rect x="3" y="1" width="8" height="12" rx="1.5" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="11" r="0.7" fill="currentColor"/></svg>${q.mobile}</span>` : ''}
           ${amountTag}
+          ${holdTag}
           ${q.slot_time && isAppt ? `
             <span class="qmeta-item" style="color:var(--primary); background:var(--primary-l); padding:2px 6px; border-radius:4px; font-family:var(--font-mono); font-weight:600;">
               <svg viewBox="0 0 14 14" fill="none" width="11" height="11" style="margin-right:3px;">
@@ -343,7 +383,7 @@ function queueCardHtml(q, i) {
 }
 
 function statusLabel(s) {
-  return { WAITING: 'Waiting', CALLED: 'Called', SERVING: 'Serving', DONE: 'Done', NOSHOW: 'No-show', MISSED: 'Missed' }[s] || s;
+  return { WAITING: 'Waiting', CALLED: 'Called', SERVING: 'Serving', HOLD: 'On Hold', DONE: 'Done', NOSHOW: 'No-show', MISSED: 'Missed' }[s] || s;
 }
 
 // ─── QUEUE ACTIONS ─────────────────────────────────────
@@ -553,6 +593,40 @@ function bindEvents() {
   $('close-serve').addEventListener('click', () => closeModal('serve-modal'));
   $('cancel-serve').addEventListener('click', () => closeModal('serve-modal'));
   $('serve-form').addEventListener('submit', handleServeSubmit);
+  $('btn-open-opd').addEventListener('click', () => {
+    const queueId = parseInt($('sf-queue-id').value);
+    const entry = state.queue.find(q => q.id === queueId);
+    if (!entry) return;
+    openOpdModal(entry);
+  });
+  $('btn-open-invest').addEventListener('click', () => {
+    const queueId = parseInt($('sf-queue-id').value);
+    const entry = state.queue.find(q => q.id === queueId);
+    if (!entry) return;
+    openInvestModal(entry);
+  });
+  $('btn-hold-visit').addEventListener('click', handleHoldVisit);
+
+  // OPD modal
+  $('close-opd-modal').addEventListener('click', () => closeModal('opd-modal'));
+  $('cancel-opd-modal').addEventListener('click', () => closeModal('opd-modal'));
+  $('opd-modal').addEventListener('click', e => { if (e.target === $('opd-modal')) closeModal('opd-modal'); });
+  $('opd-inline-form').addEventListener('submit', handleOpdInlineSubmit);
+  $('opd-add-med-btn').addEventListener('click', () => addMedicineRow());
+  $('opd-add-invest-btn').addEventListener('click', () => addInvestigationRow('opd-invest-list'));
+  $('opd-print-btn').addEventListener('click', handleOpdPrint);
+  // Once the doctor edits an auto-filled vital, it's now this visit's confirmed reading.
+  document.querySelectorAll('#opd-inline-form .opd-vital-box input').forEach(input => {
+    input.addEventListener('input', () => input.classList.remove('autofilled'));
+  });
+
+  // Investigations modal (quick)
+  $('close-invest-modal').addEventListener('click', () => closeModal('invest-modal'));
+  $('cancel-invest-modal').addEventListener('click', () => closeModal('invest-modal'));
+  $('invest-modal').addEventListener('click', e => { if (e.target === $('invest-modal')) closeModal('invest-modal'); });
+  $('invest-add-btn').addEventListener('click', () => addInvestigationRow('invest-quick-list', {}, { showComment: false }));
+  $('invest-save-btn').addEventListener('click', handleInvestSave);
+  $('invest-print-btn').addEventListener('click', handleInvestPrint);
 
   // Filters
   $('filter-status').addEventListener('change', e => { state.filterStatus = e.target.value; applyQueueFilters(); });
@@ -651,6 +725,7 @@ function bindEvents() {
 
     if (act === 'miss') queueAction(id, 'miss').then(() => toast('warning', 'Moved to missed'));
     if (act === 'requeue') queueAction(id, 'requeue').then(() => toast('info', 'Re-queued at end'));
+    if (act === 'resume') queueAction(id, 'resume').then(() => toast('success', '▶ Back from investigation — returned to Waiting'));
     if (act === 'remove') confirmAction('🗑️', 'Remove from queue?', 'This will permanently remove this entry.', () => queueAction(id, 'remove'));
   });
 
@@ -781,9 +856,6 @@ function openWalkinModal() {
   $('wf-patient-id').value = '';
   $('selected-patient-chip').style.display = 'none';
   state.selectedWalkinPatient = null;
-  // Default start time = now
-  const now = new Date();
-  $('wf-start-time').value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   $('walkin-modal').classList.add('open');
   setTimeout(() => $('wf-name').focus(), 100);
 }
@@ -823,14 +895,8 @@ function openServeModal(queueId) {
   if (entry.status !== 'WAITING' && entry.status !== 'CALLED') {
     $('sf-status').value = entry.status;
   }
-  $('sf-notes').value = entry.notes || '';
-
-  const rxField = $('sf-prescription');
   const dateField = $('sf-followup');
   const btnFollowup = $('btn-book-followup');
-
-  // Repopulate Rx
-  if (rxField) rxField.value = entry.prescription || '';
 
   if (dateField) {
     // Fill in the date the doctor saved
@@ -871,6 +937,588 @@ function openServeModal(queueId) {
   }
 
   $('serve-modal').classList.add('open');
+}
+
+// ─── Quick Investigations Modal ────────────────────────
+// A lightweight companion to the full OPD record: lets the doctor advise
+// investigations (X-Ray, MRI, labs…) without opening the whole OPD form.
+// Both modals read/write the same opd_records.investigations field, so
+// whatever is selected here shows up in the full OPD record automatically —
+// only the Report Comment (added once the report is back) is OPD-record-only.
+async function openInvestModal(entry) {
+  const pat = entry.patient_id ? state.allPatients.find(p => String(p.id) === String(entry.patient_id)) : null;
+
+  state.investEntry = entry;
+  state.investOriginal = [];
+  $('iv-record-id').value = '';
+  $('iv-strip-name').textContent = entry.patient_name || '—';
+  $('iv-strip-mobile').textContent = entry.mobile || '—';
+  $('iv-strip-age').textContent = pat?.age ? `${pat.age}Y ${pat.gender || ''}`.trim() : '—';
+  clearInvestigationRows('invest-quick-list');
+  $('invest-modal').classList.add('open');
+
+  try {
+    const res = await fetch(`${OPD_API}?queue_entry_id=${entry.id}`);
+    const data = await res.json();
+    const existing = (data.records || [])[0];
+    if (existing) {
+      $('iv-record-id').value = existing.id;
+      let invs = [];
+      try { invs = existing.investigations ? JSON.parse(existing.investigations) : []; } catch { invs = []; }
+      state.investOriginal = invs;
+      invs.forEach(i => addInvestigationRow('invest-quick-list', i, { showComment: false }));
+    }
+  } catch (e) { console.error('[Investigations] load failed', e); }
+
+  if (!$('invest-quick-list').children.length) addInvestigationRow('invest-quick-list', {}, { showComment: false });
+}
+
+async function handleInvestSave() {
+  const entry = state.investEntry;
+  if (!entry) return;
+
+  const investigations = mergeInvestigationComments(collectInvestigations('invest-quick-list'), state.investOriginal);
+  const recordId = $('iv-record-id').value;
+  const payload = {
+    patient_id: entry.patient_id || null,
+    queue_entry_id: entry.id,
+    appointment_id: entry.appointment_id || null,
+    patient_name: entry.patient_name,
+    mobile: entry.mobile || '',
+    doctor_name: entry.doctor || DEFAULT_REFERRED_BY,
+    investigations,
+    investigations_advised: investigationsToText(investigations),
+  };
+
+  try {
+    const res = await fetch(recordId ? `${OPD_API}/${recordId}` : OPD_API, {
+      method: recordId ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message);
+    if (!recordId) $('iv-record-id').value = data.id;
+    state.investOriginal = investigations;
+    toast('success', 'Investigations saved');
+    closeModal('invest-modal');
+  } catch (err) {
+    toast('error', err.message || 'Failed to save investigations');
+  }
+}
+
+async function handleInvestPrint() {
+  const entry = state.investEntry;
+  if (!entry) return;
+  const investigations = mergeInvestigationComments(collectInvestigations('invest-quick-list'), state.investOriginal);
+  if (!investigations.length) { toast('warning', 'Add at least one investigation first'); return; }
+
+  await handleInvestSave();
+  printInvestigationAdvice({
+    patient_name: entry.patient_name,
+    age_gender: $('iv-strip-age').textContent !== '—' ? $('iv-strip-age').textContent : '',
+    visit_date: new Date().toISOString().slice(0, 10),
+    doctor_name: entry.doctor || DEFAULT_REFERRED_BY,
+    investigations,
+  });
+}
+
+function printInvestigationAdvice(rec) {
+  const investRows = rec.investigations.map(i => `
+    <tr><td>${i.type}</td><td>${i.detail || ''}</td><td>${i.instruction || ''}</td></tr>
+  `).join('');
+
+  const win = window.open('', '_blank', 'width=700,height=800');
+  win.document.write(`
+    <!DOCTYPE html><html><head><title>Investigation Advice — ${rec.patient_name}</title>
+    <style>
+      body { font-family: 'Segoe UI', Arial, sans-serif; padding: 30px; color: #1e293b; }
+      .rx-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #2563EB; padding-bottom: 12px; margin-bottom: 16px; }
+      .rx-clinic-name { font-size: 20px; font-weight: 800; color: #dc2626; margin: 0; }
+      .rx-clinic-sub { font-size: 12px; color: #475569; margin: 2px 0; }
+      .rx-clinic-address { font-size: 11px; color: #64748b; margin: 2px 0; }
+      .rx-doctor { text-align: right; font-size: 13px; }
+      .rx-doctor-name { font-weight: 700; font-size: 15px; margin: 0; }
+      .rx-patient-strip { display: flex; flex-wrap: wrap; gap: 18px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin: 18px 0; font-size: 13px; }
+      .rx-patient-strip b { display: block; font-size: 10px; text-transform: uppercase; color: #94a3b8; }
+      .rx-med-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+      .rx-med-table th, .rx-med-table td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; }
+      .rx-med-table th { background: #eff6ff; }
+      .rx-footer { display: flex; justify-content: flex-end; margin-top: 60px; }
+      .rx-signature { text-align: center; font-size: 12.5px; }
+      .rx-signature .line { border-top: 1px solid #1e293b; width: 200px; margin: 30px auto 4px; }
+      @media print { body { padding: 10px; } }
+    </style></head>
+    <body>
+      <div class="rx-header">
+        <div>
+          <p class="rx-clinic-name">${CLINIC_INFO.name}</p>
+          <p class="rx-clinic-sub">${CLINIC_INFO.sub}</p>
+          <p class="rx-clinic-address">${CLINIC_INFO.address}</p>
+          <p class="rx-clinic-address">${CLINIC_INFO.regNo} &nbsp;|&nbsp; Mob: ${CLINIC_INFO.mobile}</p>
+        </div>
+        <div class="rx-doctor">
+          <p class="rx-doctor-name">${rec.doctor_name}</p>
+          <p class="rx-clinic-address">${CLINIC_INFO.doctorQualification}</p>
+          <p class="rx-clinic-address">${CLINIC_INFO.doctorSpecialty}</p>
+          <p class="rx-clinic-address">${CLINIC_INFO.doctorRegNo}</p>
+        </div>
+      </div>
+      <h3 style="margin:0 0 4px;">Investigation Advice</h3>
+      <div class="rx-patient-strip">
+        <div><b>Patient Name</b>${rec.patient_name}</div>
+        <div><b>Age / Gender</b>${rec.age_gender || '—'}</div>
+        <div><b>Date</b>${rec.visit_date}</div>
+      </div>
+      <table class="rx-med-table">
+        <thead><tr><th>Investigation</th><th>Detail / Area</th><th>Instruction</th></tr></thead>
+        <tbody>${investRows}</tbody>
+      </table>
+      <div class="rx-footer">
+        <div class="rx-signature">
+          <div class="line"></div>
+          Doctor Signature
+        </div>
+      </div>
+      <script>window.onload = () => window.print();</script>
+    </body></html>
+  `);
+  win.document.close();
+}
+
+async function openOpdModal(entry) {
+  const pat = entry.patient_id ? state.allPatients.find(p => String(p.id) === String(entry.patient_id)) : null;
+
+  $('of2-id').value = '';
+  $('of2-queue-entry-id').value = entry.id;
+  $('of2-appointment-id').value = entry.appointment_id || '';
+  $('of2-patient-id').value = entry.patient_id || '';
+  $('of2-name').value = entry.patient_name || '';
+  $('of2-mobile').value = entry.mobile || '';
+  $('of2-doctor').value = entry.doctor || DEFAULT_REFERRED_BY;
+  $('opd-strip-name').textContent = entry.patient_name || '—';
+  $('opd-strip-mobile').textContent = entry.mobile || '—';
+  $('opd-strip-age').textContent = pat?.age ? `${pat.age}Y ${pat.gender || ''}`.trim() : '—';
+  ['of2-history', 'of2-prev-illness', 'of2-signs', 'of2-diagnosis', 'of2-invest-prev',
+    'of2-advice', 'of2-followup', 'of2-vital-bp', 'of2-vital-pulse', 'of2-vital-weight', 'of2-vital-height']
+    .forEach(id => { $(id).value = ''; $(id).classList.remove('autofilled'); });
+  clearMedicineRows();
+  addMedicineRow();
+  clearInvestigationRows('opd-invest-list');
+  addInvestigationRow('opd-invest-list');
+  $('opd-modal-sub').textContent = `History & prescription for ${entry.patient_name}`;
+  $('opd-modal').classList.add('open');
+
+  let existing = null;
+  try {
+    const res = await fetch(`${OPD_API}?queue_entry_id=${entry.id}`);
+    const data = await res.json();
+    existing = (data.records || [])[0];
+    if (existing) fillOpdForm(existing);
+  } catch (e) { console.error('[OPD] load current record failed', e); }
+
+  // Weight/height are registered patient attributes — pull them straight from the
+  // patient's profile (as set on the Add Patient page) unless this visit already
+  // has its own saved value.
+  if (pat?.weight_kg) setAutofilledVital('of2-vital-weight', pat.weight_kg);
+  if (pat?.height_cm) setAutofilledVital('of2-vital-height', pat.height_cm);
+
+  const history = await loadOpdHistory(entry);
+
+  // BP/Pulse are per-visit vitals, not patient attributes — carry over the most
+  // recent reading as a starting point only if this visit doesn't already have one.
+  if (history?.length) {
+    let lastVitals = {};
+    try { lastVitals = history[0].vitals ? JSON.parse(history[0].vitals) : {}; } catch { lastVitals = {}; }
+    if (lastVitals.bp) setAutofilledVital('of2-vital-bp', lastVitals.bp);
+    if (lastVitals.pulse) setAutofilledVital('of2-vital-pulse', lastVitals.pulse);
+    if (lastVitals.weight) setAutofilledVital('of2-vital-weight', lastVitals.weight);
+    if (lastVitals.height) setAutofilledVital('of2-vital-height', lastVitals.height);
+  }
+}
+
+// Fills a vitals input with a value pulled from the patient profile or a past visit
+// (rather than freshly measured this visit) and marks it visually so the doctor can
+// tell at a glance it's a carried-over value, not something typed just now.
+function setAutofilledVital(id, value) {
+  const el = $(id);
+  if (el.value.trim()) return; // don't clobber a value already set for this visit
+  el.value = value;
+  el.classList.add('autofilled');
+}
+
+// ─── Medicine rows (structured Prescription / Medicines) ──
+function clearMedicineRows() {
+  $('opd-med-list').innerHTML = '';
+}
+
+function addMedicineRow(med = {}) {
+  const list = $('opd-med-list');
+  const row = document.createElement('div');
+  row.className = 'opd-med-row';
+  row.innerHTML = `
+    <div><label>Medicine</label><input type="text" class="med-name" list="med-name-options" placeholder="e.g. Paracetamol 500mg" value="${escapeAttr(med.name)}" /></div>
+    <div><label>Dose</label><input type="text" class="med-dose" list="med-dose-options" placeholder="1 tablet" value="${escapeAttr(med.dose)}" /></div>
+    <div><label>Frequency</label><input type="text" class="med-frequency" list="med-frequency-options" placeholder="1-1-1" value="${escapeAttr(med.frequency)}" /></div>
+    <div><label>Duration</label><input type="text" class="med-duration" list="med-duration-options" placeholder="3 days" value="${escapeAttr(med.duration)}" /></div>
+    <div><label>Route</label><input type="text" class="med-route" list="med-route-options" placeholder="Oral" value="${escapeAttr(med.route)}" /></div>
+    <div><label>Instruction</label><input type="text" class="med-instruction" list="med-instruction-options" placeholder="After food" value="${escapeAttr(med.instruction)}" /></div>
+    <button type="button" class="opd-med-remove" title="Remove">✕</button>
+  `;
+  row.querySelector('.opd-med-remove').addEventListener('click', () => row.remove());
+  list.appendChild(row);
+}
+
+function escapeAttr(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+function collectMedicines() {
+  return Array.from($('opd-med-list').querySelectorAll('.opd-med-row')).map(row => ({
+    name: row.querySelector('.med-name').value.trim(),
+    dose: row.querySelector('.med-dose').value.trim(),
+    frequency: row.querySelector('.med-frequency').value.trim(),
+    duration: row.querySelector('.med-duration').value.trim(),
+    route: row.querySelector('.med-route').value.trim(),
+    instruction: row.querySelector('.med-instruction').value.trim(),
+  })).filter(m => m.name);
+}
+
+function medicinesToText(meds) {
+  return meds.map(m => {
+    const parts = [m.dose, m.frequency, m.duration].filter(Boolean).join(' | ');
+    return [m.name, parts, m.instruction].filter(Boolean).join('\n');
+  }).join('\n\n');
+}
+
+// ─── Investigation rows (structured Investigations Advised) ──
+// Shared between the full OPD modal's list (with Report Comment) and the
+// serve modal's quick "Investigations Advised" list (comment-free — a report
+// comment can only be added once the actual report is back, from the full OPD record).
+function clearInvestigationRows(containerId) {
+  $(containerId).innerHTML = '';
+}
+
+function addInvestigationRow(containerId, inv = {}, opts = {}) {
+  const showComment = opts.showComment !== false;
+  const list = $(containerId);
+  const row = document.createElement('div');
+  row.className = 'opd-invest-row' + (showComment ? '' : ' compact');
+  const options = INVESTIGATION_OPTIONS.map(opt =>
+    `<option value="${opt}" ${inv.type === opt ? 'selected' : ''}>${opt}</option>`
+  ).join('');
+  row.innerHTML = `
+    <div><label>Investigation</label><select class="inv-type"><option value="">Select…</option>${options}</select></div>
+    <div><label>Detail / Area</label><input type="text" class="inv-detail" placeholder="e.g. Right Knee" value="${escapeAttr(inv.detail)}" /></div>
+    <div><label>Instruction</label><input type="text" class="inv-instruction" placeholder="e.g. get done before next visit" value="${escapeAttr(inv.instruction)}" /></div>
+    ${showComment ? `<div><label>Report Comment</label><input type="text" class="inv-comment" placeholder="Findings once report is in…" value="${escapeAttr(inv.comment)}" /></div>` : ''}
+    <button type="button" class="opd-med-remove" title="Remove">✕</button>
+  `;
+  row.querySelector('.opd-med-remove').addEventListener('click', () => row.remove());
+  list.appendChild(row);
+}
+
+function collectInvestigations(containerId) {
+  return Array.from($(containerId).querySelectorAll('.opd-invest-row')).map(row => ({
+    type: row.querySelector('.inv-type').value,
+    detail: row.querySelector('.inv-detail').value.trim(),
+    instruction: row.querySelector('.inv-instruction').value.trim(),
+    comment: row.querySelector('.inv-comment')?.value.trim() || '',
+  })).filter(i => i.type);
+}
+
+// The quick investigation modal has no Report Comment field — when saving from
+// there, carry over any comment already stored against the same investigation
+// so a save from the quick modal never wipes out a report comment.
+function mergeInvestigationComments(investigations, original) {
+  return investigations.map(inv => {
+    if (inv.comment) return inv;
+    const match = (original || []).find(o => o.type === inv.type && (o.detail || '') === (inv.detail || ''));
+    return match ? { ...inv, comment: match.comment || '' } : inv;
+  });
+}
+
+function investigationsToText(invs) {
+  return invs.map(i => {
+    const label = [i.type, i.detail].filter(Boolean).join(' - ');
+    const extra = [i.instruction, i.comment ? `Report: ${i.comment}` : ''].filter(Boolean).join(' | ');
+    return [label, extra].filter(Boolean).join('\n');
+  }).join('\n\n');
+}
+
+function fillOpdForm(rec) {
+  $('of2-id').value = rec.id;
+  $('of2-appointment-id').value = rec.appointment_id || '';
+  $('of2-patient-id').value = rec.patient_id || '';
+  $('of2-name').value = rec.patient_name || '';
+  $('of2-mobile').value = rec.mobile || '';
+  $('of2-doctor').value = rec.doctor_name || DEFAULT_REFERRED_BY;
+  $('opd-strip-name').textContent = rec.patient_name || '—';
+  $('opd-strip-mobile').textContent = rec.mobile || '—';
+  if (rec.age) $('opd-strip-age').textContent = `${rec.age}Y ${rec.gender || ''}`.trim();
+  $('of2-history').value = rec.history || '';
+  $('of2-prev-illness').value = rec.previous_illness || '';
+  $('of2-signs').value = rec.signs_examination || '';
+  $('of2-diagnosis').value = rec.diagnosis || '';
+  $('of2-invest-prev').value = rec.previous_investigations || '';
+  $('of2-advice').value = rec.advice || '';
+  $('of2-followup').value = rec.follow_up_date || '';
+
+  let vitals = {};
+  try { vitals = rec.vitals ? JSON.parse(rec.vitals) : {}; } catch { vitals = {}; }
+  ['of2-vital-bp', 'of2-vital-pulse', 'of2-vital-weight', 'of2-vital-height'].forEach(id => $(id).classList.remove('autofilled'));
+  $('of2-vital-bp').value = vitals.bp || '';
+  $('of2-vital-pulse').value = vitals.pulse || '';
+  $('of2-vital-weight').value = vitals.weight || '';
+  $('of2-vital-height').value = vitals.height || '';
+
+  clearMedicineRows();
+  let meds = [];
+  try { meds = rec.medicines ? JSON.parse(rec.medicines) : []; } catch { meds = []; }
+  if (meds.length) meds.forEach(m => addMedicineRow(m));
+  else addMedicineRow();
+
+  clearInvestigationRows('opd-invest-list');
+  let invs = [];
+  try { invs = rec.investigations ? JSON.parse(rec.investigations) : []; } catch { invs = []; }
+  if (invs.length) invs.forEach(i => addInvestigationRow('opd-invest-list', i));
+  else addInvestigationRow('opd-invest-list');
+}
+
+async function loadOpdHistory(entry) {
+  const panel = $('opd-history-panel');
+  panel.innerHTML = '<span class="opd-hist-empty">Loading…</span>';
+  try {
+    let records = [];
+    if (entry.patient_id) {
+      const res = await fetch(`${OPD_API}?patient_id=${entry.patient_id}`);
+      const data = await res.json();
+      records = data.records || [];
+    } else if (entry.mobile) {
+      const res = await fetch(OPD_API);
+      const data = await res.json();
+      records = (data.records || []).filter(r => r.mobile === entry.mobile);
+    }
+    records = records.filter(r => r.queue_entry_id !== entry.id).sort((a, b) => b.id - a.id);
+    state.opdHistory = records;
+
+    if (!records.length) {
+      panel.innerHTML = '<span class="opd-hist-empty">No previous records found.</span>';
+      return records;
+    }
+    panel.innerHTML = records.map(r => `
+      <div class="opd-hist-item" data-id="${r.id}">
+        <span>${(r.diagnosis || r.history || 'No diagnosis recorded').slice(0, 60)}</span>
+        <span class="opd-hist-date">${r.visit_date || ''}</span>
+      </div>
+    `).join('');
+    panel.querySelectorAll('.opd-hist-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const rec = state.opdHistory.find(r => String(r.id) === item.dataset.id);
+        if (!rec) return;
+        fillOpdForm(rec);
+        panel.querySelectorAll('.opd-hist-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+      });
+    });
+    return records;
+  } catch (e) {
+    panel.innerHTML = '<span class="opd-hist-empty">Failed to load history.</span>';
+    return [];
+  }
+}
+
+function buildOpdPayload() {
+  const name = $('of2-name').value.trim();
+  if (!name) { $('of2-err-name').textContent = 'Patient name is required'; return null; }
+  $('of2-err-name').textContent = '';
+
+  const medicines = collectMedicines();
+  const investigations = collectInvestigations('opd-invest-list');
+  return {
+    patient_id: $('of2-patient-id').value || null,
+    queue_entry_id: $('of2-queue-entry-id').value || null,
+    appointment_id: $('of2-appointment-id').value || null,
+    patient_name: name,
+    mobile: $('of2-mobile').value.trim(),
+    doctor_name: $('of2-doctor').value.trim() || DEFAULT_REFERRED_BY,
+    visit_date: new Date().toISOString().slice(0, 10),
+    history: $('of2-history').value.trim(),
+    previous_illness: $('of2-prev-illness').value.trim(),
+    signs_examination: $('of2-signs').value.trim(),
+    vitals: {
+      bp: $('of2-vital-bp').value.trim(),
+      pulse: $('of2-vital-pulse').value.trim(),
+      weight: $('of2-vital-weight').value.trim(),
+      height: $('of2-vital-height').value.trim(),
+    },
+    diagnosis: $('of2-diagnosis').value.trim(),
+    investigations,
+    investigations_advised: investigationsToText(investigations),
+    previous_investigations: $('of2-invest-prev').value.trim(),
+    medicines,
+    prescription: medicinesToText(medicines),
+    advice: $('of2-advice').value.trim(),
+    follow_up_date: $('of2-followup').value || null,
+  };
+}
+
+async function saveOpdRecord(payload) {
+  const id = $('of2-id').value;
+  const res = await fetch(id ? `${OPD_API}/${id}` : OPD_API, {
+    method: id ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message);
+  if (!id) $('of2-id').value = data.id;
+
+  // Mirror the follow-up date into the serve modal's quick field if it's still empty
+  if ($('sf-followup') && !$('sf-followup').value.trim() && payload.follow_up_date) $('sf-followup').value = payload.follow_up_date;
+
+  // Keep the patient's profile in sync with the latest measured weight/height,
+  // so the next visit's OPD form (and the Add Patient page) autofills the current reading.
+  if (payload.patient_id && (payload.vitals?.weight || payload.vitals?.height)) {
+    const patchBody = {};
+    if (payload.vitals.weight) patchBody.weight_kg = payload.vitals.weight;
+    if (payload.vitals.height) patchBody.height_cm = payload.vitals.height;
+    fetch(`${PAT_API}/${payload.patient_id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patchBody),
+    }).then(() => {
+      const pat = state.allPatients.find(p => String(p.id) === String(payload.patient_id));
+      if (pat) Object.assign(pat, patchBody);
+    }).catch(e => console.error('[OPD] patient vitals sync failed', e));
+  }
+
+  return { id: id || data.id, ...payload };
+}
+
+async function handleOpdInlineSubmit(e) {
+  e.preventDefault();
+  const payload = buildOpdPayload();
+  if (!payload) return;
+
+  try {
+    await saveOpdRecord(payload);
+    toast('success', 'OPD record saved');
+    closeModal('opd-modal');
+  } catch (err) {
+    toast('error', err.message || 'Failed to save OPD record');
+  }
+}
+
+async function handleOpdPrint() {
+  const payload = buildOpdPayload();
+  if (!payload) return;
+
+  try {
+    const saved = await saveOpdRecord(payload);
+    toast('success', 'OPD record saved — opening print preview…');
+    printOpdRecord(saved);
+  } catch (err) {
+    toast('error', err.message || 'Failed to save OPD record');
+  }
+}
+
+// ─── Printable Prescription ───────────────────────────
+function printOpdRecord(rec) {
+  const age = $('opd-strip-age').textContent !== '—' ? $('opd-strip-age').textContent : '';
+  const opdNo = rec.id ? `OPD-${rec.id}` : '—';
+  const medsHtml = (rec.medicines || []).length
+    ? `<table class="rx-med-table">
+        <thead><tr><th>Medicine</th><th>Dose</th><th>Frequency</th><th>Duration</th><th>Route</th><th>Instruction</th></tr></thead>
+        <tbody>${rec.medicines.map(m => `
+          <tr><td>${m.name}</td><td>${m.dose || ''}</td><td>${m.frequency || ''}</td><td>${m.duration || ''}</td><td>${m.route || ''}</td><td>${m.instruction || ''}</td></tr>
+        `).join('')}</tbody>
+      </table>`
+    : '<p class="rx-empty">No medicines prescribed.</p>';
+
+  const investHtml = (rec.investigations || []).length
+    ? `<table class="rx-med-table">
+        <thead><tr><th>Investigation</th><th>Detail / Area</th><th>Instruction</th><th>Report Comment</th></tr></thead>
+        <tbody>${rec.investigations.map(i => `
+          <tr><td>${i.type}</td><td>${i.detail || ''}</td><td>${i.instruction || ''}</td><td>${i.comment || ''}</td></tr>
+        `).join('')}</tbody>
+      </table>`
+    : '<p class="rx-empty">No investigations advised.</p>';
+
+  const win = window.open('', '_blank', 'width=800,height=900');
+  win.document.write(`
+    <!DOCTYPE html><html><head><title>Prescription — ${rec.patient_name}</title>
+    <style>
+      body { font-family: 'Segoe UI', Arial, sans-serif; padding: 30px; color: #1e293b; }
+      .rx-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #2563EB; padding-bottom: 12px; margin-bottom: 16px; }
+      .rx-clinic-name { font-size: 20px; font-weight: 800; color: #dc2626; margin: 0; }
+      .rx-clinic-sub { font-size: 12px; color: #475569; margin: 2px 0; }
+      .rx-clinic-address { font-size: 11px; color: #64748b; margin: 2px 0; }
+      .rx-doctor { text-align: right; font-size: 13px; }
+      .rx-doctor-name { font-weight: 700; font-size: 15px; margin: 0; }
+      .rx-patient-strip { display: flex; flex-wrap: wrap; gap: 18px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin-bottom: 18px; font-size: 13px; }
+      .rx-patient-strip b { display: block; font-size: 10px; text-transform: uppercase; color: #94a3b8; }
+      .rx-section { margin-bottom: 14px; }
+      .rx-section h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: #2563EB; margin: 0 0 4px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 3px; }
+      .rx-section p { font-size: 13.5px; margin: 0; white-space: pre-wrap; }
+      .rx-med-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      .rx-med-table th, .rx-med-table td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; }
+      .rx-med-table th { background: #eff6ff; }
+      .rx-empty { font-size: 12.5px; color: #94a3b8; font-style: italic; }
+      .rx-footer { display: flex; justify-content: space-between; margin-top: 50px; }
+      .rx-signature { text-align: center; font-size: 12.5px; }
+      .rx-signature .line { border-top: 1px solid #1e293b; width: 200px; margin: 30px auto 4px; }
+      @media print { body { padding: 10px; } }
+    </style></head>
+    <body>
+      <div class="rx-header">
+        <div>
+          <p class="rx-clinic-name">${CLINIC_INFO.name}</p>
+          <p class="rx-clinic-sub">${CLINIC_INFO.sub}</p>
+          <p class="rx-clinic-address">${CLINIC_INFO.address}</p>
+          <p class="rx-clinic-address">${CLINIC_INFO.regNo} &nbsp;|&nbsp; Mob: ${CLINIC_INFO.mobile}</p>
+        </div>
+        <div class="rx-doctor">
+          <p class="rx-doctor-name">${rec.doctor_name || DEFAULT_REFERRED_BY}</p>
+          <p class="rx-clinic-address">${CLINIC_INFO.doctorQualification}</p>
+          <p class="rx-clinic-address">${CLINIC_INFO.doctorSpecialty}</p>
+          <p class="rx-clinic-address">${CLINIC_INFO.doctorRegNo}</p>
+        </div>
+      </div>
+
+      <div class="rx-patient-strip">
+        <div><b>Patient Name</b>${rec.patient_name}</div>
+        <div><b>Age / Gender</b>${age || '—'}</div>
+        <div><b>Date</b>${rec.visit_date}</div>
+        <div><b>OPD No.</b>${opdNo}</div>
+      </div>
+      ${rec.vitals && (rec.vitals.bp || rec.vitals.pulse || rec.vitals.weight || rec.vitals.height) ? `
+      <div class="rx-patient-strip">
+        ${rec.vitals.bp ? `<div><b>BP</b>${rec.vitals.bp} mmHg</div>` : ''}
+        ${rec.vitals.pulse ? `<div><b>Pulse</b>${rec.vitals.pulse} bpm</div>` : ''}
+        ${rec.vitals.weight ? `<div><b>Weight</b>${rec.vitals.weight} kg</div>` : ''}
+        ${rec.vitals.height ? `<div><b>Height</b>${rec.vitals.height} cm</div>` : ''}
+      </div>` : ''}
+
+      <div class="rx-section"><h4>Diagnosis</h4><p>${rec.diagnosis || '—'}</p></div>
+      <div class="rx-section"><h4>Prescription / Medicines</h4>${medsHtml}</div>
+      <div class="rx-section"><h4>Investigations Advised</h4>${investHtml}</div>
+      <div class="rx-section"><h4>Advice</h4><p>${rec.advice || '—'}</p></div>
+      <div class="rx-section"><h4>Follow-up Date</h4><p>${rec.follow_up_date || '—'}</p></div>
+
+      <div class="rx-footer">
+        <div></div>
+        <div class="rx-signature">
+          <div class="line"></div>
+          Doctor Signature
+        </div>
+      </div>
+
+      <script>window.onload = () => window.print();</script>
+    </body></html>
+  `);
+  win.document.close();
 }
 
 function closeModal(id) {
@@ -962,44 +1610,8 @@ async function handleApptSubmit(e) {
 
   if (!state.apptSelectedDate) { toast('warning', 'Please select a date on the calendar'); return; }
 
-  // 1. Get Dropdown Values
-  const startH = parseInt($('af-start-h').value);
-  const startM = parseInt($('af-start-m').value);
-  const startAMPM = $('af-start-ampm').value;
-
-  const endH = parseInt($('af-end-h').value);
-  const endM = parseInt($('af-end-m').value);
-  const endAMPM = $('af-end-ampm').value;
-
-  // 2. Convert to total minutes from midnight for validation
-  const toMinutes = (h, m, ampm) => {
-    let hh = h === 12 ? 0 : h;
-    if (ampm === 'PM') hh += 12;
-    return (hh * 60) + m;
-  };
-
-  const startTotal = toMinutes(startH, startM, startAMPM);
-  const endTotal = toMinutes(endH, endM, endAMPM);
-
-  // 3. Validation: End must be after Start
-  // We allow "Crossing Midnight" (e.g., 11 PM to 2 AM) 
-  // We only block if it's the SAME AM/PM period or same cycle where End <= Start
-  const isCrossingMidnight = (startAMPM === 'PM' && endAMPM === 'AM');
-
-  if (!isCrossingMidnight && endTotal <= startTotal) {
-    toast('error', 'End Time must be later than Start Time');
-    return;
-  }
-
-  // 4. Proceed with booking
-  const startTime12 = `${$('af-start-h').value}:${$('af-start-m').value} ${startAMPM}`;
-  const endTime12 = `${$('af-end-h').value}:${$('af-end-m').value} ${endAMPM}`;
-
   const data = Object.fromEntries(new FormData($('appt-form')));
   Object.keys(data).forEach(k => { if (data[k] === '') delete data[k]; });
-
-  // Save as the range string
-  data.slot_time = `${startTime12} - ${endTime12}`;
 
   if ($('af-patient-id').value) data.patient_id = $('af-patient-id').value;
   data.appt_date = state.apptSelectedDate;
@@ -1023,6 +1635,26 @@ async function handleApptSubmit(e) {
   }
 }
 
+// Doctor said "go get the X-Ray and come back today with the report" — pause
+// the visit without completing it or booking a future-dated follow-up.
+async function handleHoldVisit() {
+  const queueId = parseInt($('sf-queue-id').value);
+  const entry = state.queue.find(q => q.id === queueId);
+  if (!entry) return;
+
+  const reason = prompt(
+    'Why is this patient being put on hold? (e.g. "Gone for X-Ray, back today with report")',
+    'Gone for investigation — will return today with report'
+  );
+  if (reason === null) return; // cancelled
+
+  const result = await queueAction(queueId, 'hold', { reason: reason.trim() || undefined });
+  if (result?.success) {
+    toast('success', `⏸ ${entry.patient_name} put on hold — will resume when back`);
+    closeModal('serve-modal');
+  }
+}
+
 async function handleServeSubmit(e) {
   e.preventDefault();
   const queueId = $('sf-queue-id').value;
@@ -1037,9 +1669,7 @@ async function handleServeSubmit(e) {
   const payload = {
     status: data.status,
     amount_paid: data.amount_paid ? parseFloat(data.amount_paid) : 0,
-    notes: data.notes,
-    prescription: data.prescription,    
-    follow_up_date: actualFollowUpDate // <-- Uses the manual value!
+    follow_up_date: actualFollowUpDate // <-- Uses the manual value! Diagnosis/Rx come from the linked OPD record.
   };
 
   const result = await queueAction(parseInt(queueId), 'complete', payload);

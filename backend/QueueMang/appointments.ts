@@ -3,6 +3,7 @@ import { Router, Request, Response } from 'express';
 import DynamicDatabaseService from '../../database_Manager/database.service';
 import { QUEUE_SCHEMA } from '../../database_Manager/database.schemas';
 import { sendSms } from '../../Sms/sms.service';
+import { findOrCreatePatient } from '../utils/patient.helper';
 
 const router = Router();
 const db = DynamicDatabaseService.getDatabase('queue', QUEUE_SCHEMA);
@@ -51,23 +52,22 @@ router.post('/', (req: Request, res: Response) => {
             return res.status(400).json({ success: false, message: 'appt_date required' });
         }
 
+        // Register a new patient record if this booking isn't linked to an existing one,
+        // so they appear in the Patients list just like a manually-added patient would.
+        const patientId = body.patient_id
+            ? parseInt(body.patient_id)
+            : findOrCreatePatient({ full_name: body.patient_name, mobile: body.mobile, visit_type: body.visit_type });
+
         // ─── NEW: PREVENT DUPLICATE BOOKINGS ──────────────
-        if (body.patient_id) {
-            const existing = db.selectOne('appointments', 'patient_id = ? AND appt_date = ?', [body.patient_id, body.appt_date]);
-            if (existing) {
-                return res.status(400).json({ success: false, message: 'Patient already booked an appointment for this date.' });
-            }
-        } else if (body.mobile?.trim()) {
-            const existing = db.selectOne('appointments', 'mobile = ? AND appt_date = ?', [body.mobile.trim(), body.appt_date]);
-            if (existing) {
-                return res.status(400).json({ success: false, message: 'An appointment with this mobile number already exists for this date.' });
-            }
+        const existing = db.selectOne('appointments', 'patient_id = ? AND appt_date = ?', [patientId, body.appt_date]);
+        if (existing) {
+            return res.status(400).json({ success: false, message: 'Patient already booked an appointment for this date.' });
         }
         // ──────────────────────────────────────────────────
 
         const now = new Date().toISOString();
         const data: Record<string, any> = {
-            patient_id: body.patient_id ? parseInt(body.patient_id) : null,
+            patient_id: patientId,
             patient_name: body.patient_name.trim(),
             mobile: body.mobile?.trim() || null,
             appt_date: body.appt_date,

@@ -6,6 +6,7 @@ import path from 'path';
 import patientRouter, { visitsRouter } from './add/patients';
 import queueRouter from './QueueMang/queue';
 import appointmentRouter from './QueueMang/appointments';
+import opdRouter from './OPD/opd';
 import dashboardRouter from './dashboard/dashboard';
 
 
@@ -26,6 +27,7 @@ app.use('/api/patients', patientRouter);
 app.use('/api/visits', visitsRouter);
 app.use('/api/queue', queueRouter);
 app.use('/api/appointments', appointmentRouter);
+app.use('/api/opd', opdRouter);
 app.use('/api/dashboard', dashboardRouter);
 
 
@@ -36,6 +38,10 @@ app.get('/patients', (req, res) => {
 
 app.get('/queue', (_req, res) => {
   res.sendFile(path.join(__dirname, '../QueueMang.html'));
+});
+
+app.get('/opd', (_req, res) => {
+  res.sendFile(path.join(__dirname, '../OPD.html'));
 });
 
 // Serve dashboard.html

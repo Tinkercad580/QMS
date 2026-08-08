@@ -3,6 +3,7 @@ import { Router, Request, Response } from 'express';
 import DynamicDatabaseService from '../../database_Manager/database.service';
 import { QUEUE_SCHEMA, PATIENT_SCHEMA } from '../../database_Manager/database.schemas';
 import { sendSms } from '../../Sms/sms.service'; // ⬅️ Import the real SMS utility
+import { findOrCreatePatient } from '../utils/patient.helper';
 
 const router = Router();
 const queueDb = DynamicDatabaseService.getDatabase('queue', QUEUE_SCHEMA);
@@ -80,7 +81,7 @@ router.get('/', (req: Request, res: Response) => {
                 CASE priority WHEN 'EMERGENCY' THEN 0 WHEN 'VIP' THEN 1 ELSE 2 END ASC,
                 CASE status
                     WHEN 'SERVING' THEN 0 WHEN 'CALLED'  THEN 1 WHEN 'WAITING' THEN 2
-                    WHEN 'MISSED'  THEN 3 WHEN 'DONE'    THEN 4 WHEN 'NOSHOW'  THEN 5 ELSE 6
+                    WHEN 'HOLD'    THEN 3 WHEN 'MISSED'  THEN 4 WHEN 'DONE'    THEN 5 WHEN 'NOSHOW' THEN 6 ELSE 7
                 END ASC,
                 CASE WHEN status = 'WAITING' AND called_at IS NOT NULL THEN 1 ELSE 0 END ASC,
                 CASE WHEN status = 'WAITING' AND called_at IS NOT NULL THEN updated_at ELSE '0' END ASC,
@@ -104,8 +105,14 @@ router.post('/', async (req: Request, res: Response) => {
         const date = body.queue_date || now.slice(0, 10);
         const token = getNextToken(date);
 
+        // Register a new patient record if this walk-in isn't linked to an existing one,
+        // so they appear in the Patients list just like a manually-added patient would.
+        const patientId = body.patient_id
+            ? parseInt(body.patient_id)
+            : findOrCreatePatient({ full_name: body.patient_name, mobile: body.mobile, visit_type: body.visit_type });
+
         const data: Record<string, any> = {
-            patient_id: body.patient_id ? parseInt(body.patient_id) : null,
+            patient_id: patientId,
             patient_name: body.patient_name.trim(),
             mobile: body.mobile?.trim() || null,
             ticket_type: body.ticket_type || 'WALKIN',
@@ -204,7 +211,7 @@ router.post('/inject-appointment', async (req: Request, res: Response) => {
 router.post('/:id/action', async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id as string, 10);
-        const { action, status, amount_paid, notes, prescription, follow_up_date } = req.body;
+        const { action, status, amount_paid, notes, prescription, follow_up_date, reason } = req.body;
         const now = new Date().toISOString();
 
         const entry = queueDb.selectOne('queue_entries', 'id = ?', [id]) as any;
@@ -243,14 +250,40 @@ router.post('/:id/action', async (req: Request, res: Response) => {
                 break;
             }
 
+            // Doctor sent the patient out (e.g. for an X-Ray) expecting them back
+            // the same day with the report — pause them without ending the visit
+            // or booking a future-dated follow-up appointment.
+            case 'hold': {
+                updates.status = 'HOLD';
+                updates.hold_reason = reason || 'Gone for investigation — will return today with report';
+                updates.hold_at = now;
+                break;
+            }
+
+            // Patient is back with the report — return them to the active queue.
+            case 'resume': {
+                updates.status = 'WAITING';
+                updates.hold_reason = null;
+                updates.hold_at = null;
+                break;
+            }
+
             case 'complete': {
                 const finalStatus = status || 'DONE';
+
+                // The doctor's diagnosis/prescription now live in the linked OPD record
+                // rather than on the serve form — fall back to it if not sent directly.
+                const opdRecord = queueDb.selectOne('opd_records', 'queue_entry_id = ?', [entry.id]) as any;
+                const effectiveNotes = notes || opdRecord?.diagnosis || null;
+                const effectivePrescription = prescription || opdRecord?.prescription || null;
+                const effectiveFollowUp = follow_up_date || opdRecord?.follow_up_date || null;
+
                 updates.status = finalStatus;
                 updates.served_at = now;
                 updates.amount_paid = amount_paid ? parseFloat(amount_paid) : 0;
-                updates.notes = notes || null;
-                updates.prescription = prescription || null;
-                updates.follow_up_date = follow_up_date || null;
+                updates.notes = effectiveNotes;
+                updates.prescription = effectivePrescription;
+                updates.follow_up_date = effectiveFollowUp;
 
                 if (finalStatus === 'DONE' || finalStatus === 'NOSHOW') {
                     if (entry.patient_id && finalStatus === 'DONE') {
@@ -265,9 +298,9 @@ router.post('/:id/action', async (req: Request, res: Response) => {
                                 visit_type: entry.visit_type || 'OPD',
                                 doctor: entry.doctor || null,
                                 complaint: entry.chief_complaint || null,
-                                diagnosis: notes || null,
-                                prescription: prescription || null,
-                                follow_up_date: follow_up_date || null,
+                                diagnosis: effectiveNotes,
+                                prescription: effectivePrescription,
+                                follow_up_date: effectiveFollowUp,
                                 notes: paymentTag,
                             };
 

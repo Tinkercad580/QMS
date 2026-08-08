@@ -537,7 +537,7 @@ function renderDrawerTab(tab) {
             ['City', p.city],
             ['PIN', p.pin_code],
             ['Department', p.department],
-            ['Doctor', p.assigned_doctor],
+            ['Referred by', p.assigned_doctor],
             ['Visit Type', p.visit_type],
             ['Insurance', p.insurance_policy],
             ['Emergency Contact', p.emergency_contact_name],

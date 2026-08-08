@@ -15,6 +15,78 @@
 
 <body>
 
+  <!-- Shared dropdown suggestion lists for the medicine rows (type-to-filter, still free text) -->
+  <datalist id="med-name-options">
+    <option value="Paracetamol 500mg"></option>
+    <option value="Ibuprofen 400mg"></option>
+    <option value="Diclofenac 50mg"></option>
+    <option value="Aceclofenac + Paracetamol"></option>
+    <option value="Etoricoxib 90mg"></option>
+    <option value="Tramadol 50mg"></option>
+    <option value="Calcium + Vitamin D3"></option>
+    <option value="Methylcobalamin"></option>
+    <option value="Pantoprazole 40mg"></option>
+    <option value="Chymoral Forte"></option>
+  </datalist>
+  <datalist id="med-dose-options">
+    <option value="1 tablet"></option>
+    <option value="2 tablets"></option>
+    <option value="1 capsule"></option>
+    <option value="5 ml"></option>
+    <option value="10 ml"></option>
+    <option value="1 tsp"></option>
+    <option value="1 injection"></option>
+    <option value="Apply locally"></option>
+    <option value="1 drop"></option>
+    <option value="2 drops"></option>
+  </datalist>
+  <datalist id="med-frequency-options">
+    <option value="1-0-0"></option>
+    <option value="0-1-0"></option>
+    <option value="0-0-1"></option>
+    <option value="1-1-1"></option>
+    <option value="1-0-1"></option>
+    <option value="1-1-0"></option>
+    <option value="0-1-1"></option>
+    <option value="Once daily"></option>
+    <option value="Twice daily"></option>
+    <option value="Thrice daily"></option>
+    <option value="Every 6 hours"></option>
+    <option value="Every 8 hours"></option>
+    <option value="SOS (as needed)"></option>
+    <option value="Stat"></option>
+  </datalist>
+  <datalist id="med-duration-options">
+    <option value="3 days"></option>
+    <option value="5 days"></option>
+    <option value="7 days"></option>
+    <option value="10 days"></option>
+    <option value="14 days"></option>
+    <option value="1 month"></option>
+    <option value="Until finished"></option>
+    <option value="SOS (as needed)"></option>
+  </datalist>
+  <datalist id="med-route-options">
+    <option value="Oral"></option>
+    <option value="Topical"></option>
+    <option value="IV"></option>
+    <option value="IM"></option>
+    <option value="Subcutaneous"></option>
+    <option value="Inhalation"></option>
+    <option value="Eye drops"></option>
+    <option value="Ear drops"></option>
+    <option value="Nasal"></option>
+  </datalist>
+  <datalist id="med-instruction-options">
+    <option value="After food"></option>
+    <option value="Before food"></option>
+    <option value="With food"></option>
+    <option value="Empty stomach"></option>
+    <option value="At bedtime"></option>
+    <option value="Before breakfast"></option>
+    <option value="As needed (SOS)"></option>
+  </datalist>
+
   <!-- TOPBAR -->
   <header class="topbar">
     <div class="topbar-left">
@@ -37,6 +109,11 @@
           <rect x="3" y="16" width="7" height="5" rx="1" />
         </svg>
         <span class="btn-text">Dashboard</span>
+      </a>
+
+      <a href="OPD.html" class="btn btn-sm"
+        style="background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; text-decoration: none;">
+        <span class="btn-text">OPD</span>
       </a>
 
       <a href="add-pandc.html" class="btn btn-sm"
@@ -276,7 +353,7 @@
               </select>
             </div>
             <div class="form-group">
-              <label>Doctor</label>
+              <label>Referred by</label>
               <input type="text" id="wf-doctor" name="doctor" placeholder="Dr. Name" />
             </div>
             <div class="form-group">
@@ -294,14 +371,6 @@
             <div class="form-group full-width">
               <label>Chief Complaint</label>
               <textarea id="wf-complaint" name="chief_complaint" rows="2" placeholder="Reason for visit…"></textarea>
-            </div>
-            <div class="form-group">
-              <label>Queue Start Time</label>
-              <input type="time" id="wf-start-time" name="start_time" />
-            </div>
-            <div class="form-group">
-              <label>Queue End Time</label>
-              <input type="time" id="wf-end-time" name="end_time" />
             </div>
           </div>
           <div class="form-actions">
@@ -380,74 +449,8 @@
               <input type="tel" id="af-mobile" name="mobile" placeholder="+91 …" />
             </div>
 
-            <!-- ── NEW: Slot Range ── -->
-            <!-- ── NEW: 12-Hour Slot Range Dropdowns ── -->
-            <div class="form-group required">
-              <label>Start Time *</label>
-              <div style="display:flex; gap:4px;">
-                <select id="af-start-h" style="padding:8px 4px; flex:1; min-width:0;">
-                  <option>01</option>
-                  <option>02</option>
-                  <option>03</option>
-                  <option>04</option>
-                  <option>05</option>
-                  <option>06</option>
-                  <option>07</option>
-                  <option>08</option>
-                  <option selected>09</option>
-                  <option>10</option>
-                  <option>11</option>
-                  <option>12</option>
-                </select>
-                <span style="display:flex; align-items:center; font-weight:700;">:</span>
-                <select id="af-start-m" style="padding:8px 4px; flex:1; min-width:0;">
-                  <option>00</option>
-                  <option>15</option>
-                  <option>30</option>
-                  <option>45</option>
-                </select>
-                <select id="af-start-ampm" style="padding:8px 4px; flex:1; min-width:0;">
-                  <option>AM</option>
-                  <option>PM</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="form-group required">
-              <label>End Time *</label>
-              <div style="display:flex; gap:4px;">
-                <select id="af-end-h" style="padding:8px 4px; flex:1; min-width:0;">
-                  <option>01</option>
-                  <option>02</option>
-                  <option>03</option>
-                  <option>04</option>
-                  <option>05</option>
-                  <option>06</option>
-                  <option>07</option>
-                  <option>08</option>
-                  <option selected>09</option>
-                  <option>10</option>
-                  <option>11</option>
-                  <option>12</option>
-                </select>
-                <span style="display:flex; align-items:center; font-weight:700;">:</span>
-                <select id="af-end-m" style="padding:8px 4px; flex:1; min-width:0;">
-                  <option>00</option>
-                  <option selected>15</option>
-                  <option>30</option>
-                  <option>45</option>
-                </select>
-                <select id="af-end-ampm" style="padding:8px 4px; flex:1; min-width:0;">
-                  <option>AM</option>
-                  <option>PM</option>
-                </select>
-              </div>
-            </div>
-            <!-- ─────────────────────────────────────── -->
-            <!-- ───────────────────── -->
-
             <div class="form-group">
-              <label>Doctor</label>
+              <label>Referred by</label>
               <input type="text" id="af-doctor" name="doctor" placeholder="Dr. Name" />
             </div>
             <div class="form-group">
@@ -520,14 +523,22 @@
             </div>
 
             <div class="form-group full-width">
-              <label>Diagnosis / Notes</label>
-              <textarea id="sf-notes" name="notes" rows="2" placeholder="Quick notes…"></textarea>
-            </div>
-
-            <div class="form-group full-width">
-              <label>Medicine / Precautions (Rx) ⭐</label>
-              <textarea id="sf-prescription" name="prescription" rows="2"
-                placeholder="Prescribed medicines or important precautions…"></textarea>
+              <div class="serve-action-grid">
+                <button type="button" class="serve-action-card serve-action-opd" id="btn-open-opd">
+                  <span class="serve-action-icon">📋</span>
+                  <span class="serve-action-text">
+                    <span class="serve-action-title">Full OPD Record</span>
+                    <span class="serve-action-sub">History, diagnosis & Rx</span>
+                  </span>
+                </button>
+                <button type="button" class="serve-action-card serve-action-invest" id="btn-open-invest">
+                  <span class="serve-action-icon">🧪</span>
+                  <span class="serve-action-text">
+                    <span class="serve-action-title">Investigations Advised</span>
+                    <span class="serve-action-sub">X-Ray, MRI, Labs…</span>
+                  </span>
+                </button>
+              </div>
             </div>
 
             <div class="form-group full-width">
@@ -540,9 +551,183 @@
           </div>
           <div class="form-actions" style="margin-top: 15px;">
             <button type="button" class="btn btn-ghost" id="cancel-serve">Cancel</button>
+            <button type="button" class="btn btn-hold" id="btn-hold-visit" title="Patient has gone for an investigation and will return today with the report">⏸ Hold (Back Today)</button>
             <button type="submit" class="btn btn-primary">Save & Update</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- MODAL: OPD RECORD                        -->
+  <!-- ════════════════════════════════════════ -->
+  <div class="modal-overlay" id="opd-modal">
+    <div class="modal modal-lg" role="dialog">
+      <div class="modal-header opd-modal-header">
+        <div class="opd-modal-header-top">
+          <div>
+            <h2 class="modal-title">OPD Record</h2>
+            <p class="modal-sub" id="opd-modal-sub">History, diagnosis & prescription for this visit</p>
+          </div>
+          <button class="modal-close" id="close-opd-modal">
+            <svg viewBox="0 0 20 20" fill="none">
+              <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
+        <div class="opd-patient-strip">
+          <div class="opd-patient-field">
+            <span class="opd-patient-label">Patient Name</span>
+            <span class="opd-patient-value" id="opd-strip-name">—</span>
+          </div>
+          <div class="opd-patient-field">
+            <span class="opd-patient-label">Mobile</span>
+            <span class="opd-patient-value" id="opd-strip-mobile">—</span>
+          </div>
+          <div class="opd-patient-field">
+            <span class="opd-patient-label">Age</span>
+            <span class="opd-patient-value" id="opd-strip-age">—</span>
+          </div>
+          <div class="opd-patient-field opd-referred-field">
+            <span class="opd-patient-label">Referred by</span>
+            <input type="text" id="of2-doctor" name="doctor_name" class="opd-referred-input" placeholder="Dr. Name" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-body">
+
+        <label class="form-label">Previous OPD Records for this patient</label>
+        <div class="opd-history-panel" id="opd-history-panel">
+          <span class="opd-hist-empty">No previous records found.</span>
+        </div>
+
+        <form id="opd-inline-form" novalidate>
+          <input type="hidden" id="of2-id" />
+          <input type="hidden" id="of2-queue-entry-id" />
+          <input type="hidden" id="of2-appointment-id" />
+          <input type="hidden" id="of2-patient-id" />
+          <input type="hidden" id="of2-name" name="patient_name" />
+          <input type="hidden" id="of2-mobile" name="mobile" />
+          <span class="field-error" id="of2-err-name"></span>
+
+          <div class="form-group full-width" style="margin-bottom:12px">
+            <label>Vitals / Measurements</label>
+            <div class="opd-vitals-grid">
+              <div class="opd-vital-box">
+                <label>BP</label>
+                <div class="opd-vital-input-row"><input type="text" id="of2-vital-bp" placeholder="120/80" /><span class="opd-vital-unit">mmHg</span></div>
+              </div>
+              <div class="opd-vital-box">
+                <label>Pulse</label>
+                <div class="opd-vital-input-row"><input type="text" id="of2-vital-pulse" placeholder="78" /><span class="opd-vital-unit">bpm</span></div>
+              </div>
+              <div class="opd-vital-box">
+                <label>Weight</label>
+                <div class="opd-vital-input-row"><input type="text" id="of2-vital-weight" placeholder="72" /><span class="opd-vital-unit">kg</span></div>
+              </div>
+              <div class="opd-vital-box">
+                <label>Height</label>
+                <div class="opd-vital-input-row"><input type="text" id="of2-vital-height" placeholder="175" /><span class="opd-vital-unit">cm</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label>History / Complaints</label>
+              <textarea id="of2-history" name="history" rows="2" placeholder="e.g. Knee pain…"></textarea>
+            </div>
+            <div class="form-group full-width">
+              <label>Previous Illness</label>
+              <textarea id="of2-prev-illness" name="previous_illness" rows="2"
+                placeholder="e.g. Hypertension, Diabetes mellitus…"></textarea>
+            </div>
+            <div class="form-group full-width">
+              <label>Signs / Examination Details</label>
+              <textarea id="of2-signs" name="signs_examination" rows="2"></textarea>
+            </div>
+            <div class="form-group full-width">
+              <label>Diagnosis</label>
+              <textarea id="of2-diagnosis" name="diagnosis" rows="2"></textarea>
+            </div>
+            <div class="form-group full-width">
+              <label>Investigations Advised</label>
+              <div class="opd-invest-list" id="opd-invest-list"></div>
+              <button type="button" class="btn btn-ghost btn-sm" id="opd-add-invest-btn">+ Add Investigation</button>
+            </div>
+            <div class="form-group full-width">
+              <label>Previous Investigations</label>
+              <textarea id="of2-invest-prev" name="previous_investigations" rows="2"></textarea>
+            </div>
+            <div class="form-group full-width">
+              <label>Prescription / Medicines</label>
+              <div class="opd-med-list" id="opd-med-list"></div>
+              <button type="button" class="btn btn-ghost btn-sm" id="opd-add-med-btn">+ Add Medicine</button>
+            </div>
+            <div class="form-group full-width">
+              <label>Advice</label>
+              <textarea id="of2-advice" name="advice" rows="2" placeholder="General advice for the patient…"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Follow-up Date</label>
+              <input type="date" id="of2-followup" name="follow_up_date" />
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="cancel-opd-modal">Cancel</button>
+            <button type="button" class="btn btn-secondary" id="opd-print-btn">🖨️ Save & Print Prescription</button>
+            <button type="submit" class="btn btn-primary">Save OPD Record</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- MODAL: INVESTIGATIONS ADVISED (quick)   -->
+  <!-- ════════════════════════════════════════ -->
+  <div class="modal-overlay" id="invest-modal">
+    <div class="modal" role="dialog">
+      <div class="modal-header opd-modal-header">
+        <div class="opd-modal-header-top">
+          <div>
+            <h2 class="modal-title">Investigations Advised</h2>
+            <p class="modal-sub">Quick add — report comments can be added from the full OPD record</p>
+          </div>
+          <button class="modal-close" id="close-invest-modal">
+            <svg viewBox="0 0 20 20" fill="none">
+              <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
+        <div class="opd-patient-strip">
+          <div class="opd-patient-field">
+            <span class="opd-patient-label">Patient Name</span>
+            <span class="opd-patient-value" id="iv-strip-name">—</span>
+          </div>
+          <div class="opd-patient-field">
+            <span class="opd-patient-label">Mobile</span>
+            <span class="opd-patient-value" id="iv-strip-mobile">—</span>
+          </div>
+          <div class="opd-patient-field">
+            <span class="opd-patient-label">Age</span>
+            <span class="opd-patient-value" id="iv-strip-age">—</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="iv-record-id" />
+        <div class="opd-invest-list" id="invest-quick-list"></div>
+        <button type="button" class="btn btn-ghost btn-sm" id="invest-add-btn">+ Add Investigation</button>
+        <p class="opd-hist-empty" style="margin-top:10px">📝 Report Comment can only be added from the full OPD record, once the report is back.</p>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" id="cancel-invest-modal">Cancel</button>
+          <button type="button" class="btn btn-secondary" id="invest-print-btn">🖨️ Print Investigation Advice</button>
+          <button type="button" class="btn btn-primary" id="invest-save-btn">Save</button>
+        </div>
       </div>
     </div>
   </div>

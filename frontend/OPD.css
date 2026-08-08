@@ -1,0 +1,63 @@
+/* OPD.css — extends QueueMang.css look for the OPD sheet page */
+
+.opd-sheet {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+
+.opd-sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.opd-record-id {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.opd-divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 16px 0;
+}
+
+.opd-record-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  background: #fff;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease;
+}
+
+.opd-record-card:hover {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+
+.opd-record-card .opd-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.opd-record-card .opd-card-name {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.opd-record-card .opd-card-date {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.opd-record-card .opd-card-diag {
+  font-size: 13px;
+  color: #475569;
+}

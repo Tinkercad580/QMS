@@ -84,8 +84,10 @@ export const QUEUE_SCHEMA = `
     start_time        TEXT,
     end_time          TEXT,
     notes             TEXT,
-    prescription      TEXT,       
-    follow_up_date    TEXT,     
+    prescription      TEXT,
+    follow_up_date    TEXT,
+    hold_reason       TEXT,
+    hold_at           TEXT,
     called_at         TEXT,
     served_at         TEXT,
     created_at        TEXT NOT NULL,
@@ -124,6 +126,41 @@ export const QUEUE_SCHEMA = `
     status            TEXT DEFAULT 'QUEUED',
     created_at        TEXT NOT NULL
   );
+`;
+
+// ─── OPD SCHEMA ───────────────────────────────────────────────
+export const OPD_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS opd_records (
+    id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id                INTEGER,
+    queue_entry_id            INTEGER,
+    appointment_id            INTEGER,
+    patient_name              TEXT NOT NULL,
+    mobile                    TEXT,
+    age                       INTEGER,
+    gender                    TEXT,
+    visit_date                TEXT NOT NULL,
+    doctor_name               TEXT,
+    complaints                TEXT,
+    history                   TEXT,
+    previous_illness          TEXT,
+    signs_examination         TEXT,
+    vitals                    TEXT,
+    diagnosis                 TEXT,
+    investigations            TEXT,
+    investigations_advised    TEXT,
+    previous_investigations   TEXT,
+    medicines                 TEXT,
+    prescription              TEXT,
+    advice                    TEXT,
+    follow_up_date            TEXT,
+    notes                     TEXT,
+    created_at                TEXT NOT NULL,
+    updated_at                TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_opd_patient      ON opd_records(patient_id);
+  CREATE INDEX IF NOT EXISTS idx_opd_queue_entry   ON opd_records(queue_entry_id);
+  CREATE INDEX IF NOT EXISTS idx_opd_visit_date    ON opd_records(visit_date DESC);
 `;
 
 // ─── TENANT SCHEMA ────────────────────────────────────────────
@@ -201,6 +238,7 @@ export const ANALYTICS_SCHEMA = `
 export const FULL_SCHEMA =
   PATIENT_SCHEMA +
   QUEUE_SCHEMA +
+  OPD_SCHEMA +
   TENANT_SCHEMA +
   STAFF_SCHEMA +
   ANALYTICS_SCHEMA;

@@ -131,13 +131,39 @@ class DynamicDatabaseService {
       const tableExists = this.db.prepare(
         `SELECT name FROM sqlite_master WHERE type='table' AND name='patient_visits'`
       ).get();
-      if (!tableExists) return;
+      if (tableExists) {
+        const cols = this.db.prepare(`PRAGMA table_info(patient_visits)`).all() as any[];
+        if (!cols.some(c => c.name === 'queue_entry_id')) {
+          this.db.exec(`ALTER TABLE patient_visits ADD COLUMN queue_entry_id INTEGER`);
+          this.db.exec(`CREATE INDEX IF NOT EXISTS idx_visits_queue_entry ON patient_visits(queue_entry_id)`);
+          console.log(`✅ ${this.dbName}: Migration applied — queue_entry_id added to patient_visits`);
+        }
+      }
 
-      const cols = this.db.prepare(`PRAGMA table_info(patient_visits)`).all() as any[];
-      if (!cols.some(c => c.name === 'queue_entry_id')) {
-        this.db.exec(`ALTER TABLE patient_visits ADD COLUMN queue_entry_id INTEGER`);
-        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_visits_queue_entry ON patient_visits(queue_entry_id)`);
-        console.log(`✅ ${this.dbName}: Migration applied — queue_entry_id added to patient_visits`);
+      const opdExists = this.db.prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='opd_records'`
+      ).get();
+      if (opdExists) {
+        const opdCols = this.db.prepare(`PRAGMA table_info(opd_records)`).all() as any[];
+        ['medicines', 'advice', 'investigations', 'vitals'].forEach(col => {
+          if (!opdCols.some(c => c.name === col)) {
+            this.db.exec(`ALTER TABLE opd_records ADD COLUMN ${col} TEXT`);
+            console.log(`✅ ${this.dbName}: Migration applied — ${col} added to opd_records`);
+          }
+        });
+      }
+
+      const queueExists = this.db.prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='queue_entries'`
+      ).get();
+      if (queueExists) {
+        const queueCols = this.db.prepare(`PRAGMA table_info(queue_entries)`).all() as any[];
+        ['hold_reason', 'hold_at'].forEach(col => {
+          if (!queueCols.some(c => c.name === col)) {
+            this.db.exec(`ALTER TABLE queue_entries ADD COLUMN ${col} TEXT`);
+            console.log(`✅ ${this.dbName}: Migration applied — ${col} added to queue_entries`);
+          }
+        });
       }
     } catch (error: any) {
       console.error(`❌ ${this.dbName}: Migration failed:`, error.message);
