@@ -20,6 +20,31 @@ const CLINIC_INFO = {
   doctorRegNo: 'Reg. No. 77425',
 };
 
+// Dropdown option sets for the Prescription / Medicines rows (real <select> — not
+// suggestion-only datalists — so the field always shows a fixed picklist; "Other"
+// reveals a text box for anything not on the list).
+const MED_NAME_OPTIONS = [
+  'Paracetamol 500mg', 'Ibuprofen 400mg', 'Diclofenac 50mg', 'Aceclofenac + Paracetamol',
+  'Etoricoxib 90mg', 'Tramadol 50mg', 'Calcium + Vitamin D3', 'Methylcobalamin',
+  'Pantoprazole 40mg', 'Chymoral Forte',
+];
+const MED_DOSE_OPTIONS = [
+  '1 tablet', '2 tablets', '1 capsule', '5 ml', '10 ml', '1 tsp', '1 injection', 'Apply locally', '1 drop', '2 drops',
+];
+const MED_FREQUENCY_OPTIONS = [
+  '1-0-0', '0-1-0', '0-0-1', '1-1-1', '1-0-1', '1-1-0', '0-1-1',
+  'Once daily', 'Twice daily', 'Thrice daily', 'Every 6 hours', 'Every 8 hours', 'SOS (as needed)', 'Stat',
+];
+const MED_DURATION_OPTIONS = [
+  '3 days', '5 days', '7 days', '10 days', '14 days', '1 month', 'Until finished', 'SOS (as needed)',
+];
+const MED_ROUTE_OPTIONS = [
+  'Oral', 'Topical', 'IV', 'IM', 'Subcutaneous', 'Inhalation', 'Eye drops', 'Ear drops', 'Nasal',
+];
+const MED_INSTRUCTION_OPTIONS = [
+  'After food', 'Before food', 'With food', 'Empty stomach', 'At bedtime', 'Before breakfast', 'As needed (SOS)',
+];
+
 // Common investigations for an Ortho / Bone Fracture / Trauma & Spine practice, plus general labs.
 const INVESTIGATION_OPTIONS = [
   'X-Ray', 'MRI', 'CT Scan', 'Bone Density (DEXA)', 'Ultrasound',
@@ -45,6 +70,7 @@ let state = {
   apptCalYear: new Date().getFullYear(),
   apptCalMonth: new Date().getMonth(),
   selectedCalDate: today(), // <--- This now works perfectly
+  queueDate: today(), // The date the Live Queue is currently viewing/adding to
   apptSelectedDate: null,
   selectedWalkinPatient: null,
   selectedApptPatient: null,
@@ -64,9 +90,32 @@ document.addEventListener('DOMContentLoaded', () => {
   startClock();
   loadAll();
   bindEvents();
+  bindTextareaAutosize();
   // Auto-refresh every 30 seconds
   state.autoRefreshTimer = setInterval(() => loadAll(true), 30000);
 });
+
+// ─── Auto-growing textareas ─────────────────────────────
+// Every textarea grows with its content up to a cap, then scrolls internally —
+// this keeps a long note from pushing the modal's footer buttons off-screen.
+const TEXTAREA_MAX_HEIGHT = 180;
+function autosizeTextarea(el) {
+  el.style.height = 'auto';
+  const target = Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT);
+  el.style.height = `${target}px`;
+  el.style.overflowY = el.scrollHeight > TEXTAREA_MAX_HEIGHT ? 'auto' : 'hidden';
+}
+
+function refreshAllTextareaSizes() {
+  document.querySelectorAll('textarea').forEach(autosizeTextarea);
+}
+
+function bindTextareaAutosize() {
+  // Delegated so it also covers textareas inside modals opened later.
+  document.addEventListener('input', e => {
+    if (e.target.tagName === 'TEXTAREA') autosizeTextarea(e.target);
+  });
+}
 
 async function loadAll(silent = false) {
   // 1. Fetch patients FIRST so we have age/gender data ready in memory
@@ -89,11 +138,29 @@ function startClock() {
   setInterval(update, 1000);
 }
 
-// ─── LOAD QUEUE ────────────────────────────────────────
+// ─── LIVE QUEUE DATE NAVIGATION ────────────────────────
+// Lets the doctor/reception browse (and add walk-ins to) any date, not just
+// today — e.g. to check whether a patient's history from a past visit shows
+// up correctly on a later date, without relying on the system clock.
+function shiftQueueDate(deltaDays) {
+  const d = new Date(state.queueDate + 'T00:00:00');
+  d.setDate(d.getDate() + deltaDays);
+  state.queueDate = d.toISOString().slice(0, 10);
+  $('queue-date-input').value = state.queueDate;
+  updateQueueDateNavUI();
+  loadAll();
+}
+
+function updateQueueDateNavUI() {
+  const isToday = state.queueDate === today();
+  $('queue-date-input').closest('.queue-date-nav')?.classList.toggle('not-today', !isToday);
+  $('queue-date-today').style.display = isToday ? 'none' : '';
+}
+
 // ─── LOAD QUEUE ────────────────────────────────────────
 async function loadQueue(silent = false) {
   try {
-    const res = await fetch(`${QUEUE_API}?date=${today()}`);
+    const res = await fetch(`${QUEUE_API}?date=${state.queueDate}`);
     
     // 👇 NEW: Check if the server is actually responding!
     if (!res.ok) {
@@ -168,7 +235,7 @@ function renderQueue() {
     $('queue-list').innerHTML = `
       <div class="empty-queue">
         <svg viewBox="0 0 64 64" fill="none"><rect x="8" y="16" width="48" height="36" rx="4" stroke="#cbd5e1" stroke-width="2"/><path d="M20 28h24M20 36h16" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round"/></svg>
-        <p>No queue entries${state.filterStatus || state.filterType ? ' for this filter.' : ' today.'}</p>
+        <p>No queue entries${state.filterStatus || state.filterType ? ' for this filter.' : (state.queueDate === today() ? ' today.' : ` for ${state.queueDate}.`)}</p>
       </div>`;
     return;
   }
@@ -329,12 +396,17 @@ function queueCardHtml(q, i) {
       <svg viewBox="0 0 18 18" fill="none"><path d="M4 9h7M8 5l3 4-3 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>`;
 
+  const btnReport = `
+    <button class="qbtn qbtn-call" style="background:#f0fdf9; color:#0f766e;" data-action="report" data-id="${q.id}" title="Add investigation report">
+      <svg viewBox="0 0 18 18" fill="none"><rect x="3" y="2" width="12" height="14" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M6 6h6M6 9h6M6 12h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+    </button>`;
+
   if (q.status === 'WAITING') {
     actions = btnCall + btnSkip + btnRemove;
   } else if (q.status === 'CALLED' || q.status === 'SERVING') {
     actions = btnDone + btnNoshow;
   } else if (q.status === 'HOLD') {
-    actions = btnResume + btnRemove;
+    actions = btnReport + btnResume + btnRemove;
   } else if (q.status === 'MISSED') {
     actions = btnRequeue + btnRemove;
   } else if (q.status === 'DONE' || q.status === 'NOSHOW') {
@@ -593,19 +665,7 @@ function bindEvents() {
   $('close-serve').addEventListener('click', () => closeModal('serve-modal'));
   $('cancel-serve').addEventListener('click', () => closeModal('serve-modal'));
   $('serve-form').addEventListener('submit', handleServeSubmit);
-  $('btn-open-opd').addEventListener('click', () => {
-    const queueId = parseInt($('sf-queue-id').value);
-    const entry = state.queue.find(q => q.id === queueId);
-    if (!entry) return;
-    openOpdModal(entry);
-  });
-  $('btn-open-invest').addEventListener('click', () => {
-    const queueId = parseInt($('sf-queue-id').value);
-    const entry = state.queue.find(q => q.id === queueId);
-    if (!entry) return;
-    openInvestModal(entry);
-  });
-  $('btn-hold-visit').addEventListener('click', handleHoldVisit);
+  $('opd-hold-btn').addEventListener('click', handleHoldVisit);
 
   // OPD modal
   $('close-opd-modal').addEventListener('click', () => closeModal('opd-modal'));
@@ -615,10 +675,20 @@ function bindEvents() {
   $('opd-add-med-btn').addEventListener('click', () => addMedicineRow());
   $('opd-add-invest-btn').addEventListener('click', () => addInvestigationRow('opd-invest-list'));
   $('opd-print-btn').addEventListener('click', handleOpdPrint);
+  // Quick shortcut for "go get an X-Ray/MRI/labs done" — opens the compact
+  // investigations popup on top of the OPD modal without needing to fill the
+  // full record first.
+  $('opd-quick-invest-btn').addEventListener('click', () => {
+    const queueId = parseInt($('of2-queue-entry-id').value);
+    const entry = state.queue.find(q => q.id === queueId);
+    if (entry) openInvestModal(entry);
+  });
   // Once the doctor edits an auto-filled vital, it's now this visit's confirmed reading.
   document.querySelectorAll('#opd-inline-form .opd-vital-box input').forEach(input => {
     input.addEventListener('input', () => input.classList.remove('autofilled'));
   });
+  ['of2-history', 'of2-prev-illness', 'of2-signs', 'of2-diagnosis', 'of2-invest-prev', 'of2-advice']
+    .forEach(id => bindAdviceBullets(id));
 
   // Investigations modal (quick)
   $('close-invest-modal').addEventListener('click', () => closeModal('invest-modal'));
@@ -633,6 +703,24 @@ function bindEvents() {
   $('filter-type').addEventListener('change', e => { state.filterType = e.target.value; applyQueueFilters(); });
   $('refresh-queue-btn').addEventListener('click', () => { loadAll(); toast('info', 'Refreshed'); });
   $('start-queue-btn').addEventListener('click', handleNextPatient);
+
+  // Live Queue date navigation — browse/add to any date, not just today
+  $('queue-date-input').value = state.queueDate;
+  updateQueueDateNavUI();
+  $('queue-date-input').addEventListener('change', e => {
+    if (!e.target.value) return;
+    state.queueDate = e.target.value;
+    updateQueueDateNavUI();
+    loadAll();
+  });
+  $('queue-date-prev').addEventListener('click', () => shiftQueueDate(-1));
+  $('queue-date-next').addEventListener('click', () => shiftQueueDate(1));
+  $('queue-date-today').addEventListener('click', () => {
+    state.queueDate = today();
+    $('queue-date-input').value = state.queueDate;
+    updateQueueDateNavUI();
+    loadAll();
+  });
 
   // Mini calendar nav
   $('cal-prev').addEventListener('click', () => {
@@ -685,21 +773,29 @@ function bindEvents() {
 
     if (act === 'call') callPatient(id);
 
-    // 👇 CRITICAL FIX: Differentiate between "Serving" and "Editing" 👇
+    // Doctor vs staff separation: an ongoing (CALLED/SERVING) patient goes straight
+    // to the doctor's Full OPD Record — clinical entry only, no billing fields.
+    // A DONE/NOSHOW/MISSED patient instead opens the staff billing/outcome editor,
+    // so reception can fill in Amount Paid and book the follow-up afterwards.
     if (act === 'complete') {
       const entry = state.queue.find(q => q.id === id);
-      
-      // ONLY auto-advance the queue if we are finishing a currently active patient.
-      // If they are already DONE, NOSHOW, or MISSED, we are just editing their record.
-      if (entry && (entry.status === 'CALLED' || entry.status === 'SERVING')) {
+      if (!entry) return;
+
+      if (entry.status === 'CALLED' || entry.status === 'SERVING') {
         state.autoCallNext = true;
+        openOpdModal(entry);
       } else {
         state.autoCallNext = false;
+        openServeModal(id);
       }
-      
-      openServeModal(id);
     }
-    // 👆 END CRITICAL FIX 👆
+
+    // Investigation report entry for a patient on Hold — lets staff/doctor record
+    // the report comment without opening the full OPD form.
+    if (act === 'report') {
+      const entry = state.queue.find(q => q.id === id);
+      if (entry) openInvestModal(entry);
+    }
 
     // ── UPGRADED: Small "No-show" button auto-advances without flickering
     if (act === 'noshow') {
@@ -856,8 +952,12 @@ function openWalkinModal() {
   $('wf-patient-id').value = '';
   $('selected-patient-chip').style.display = 'none';
   state.selectedWalkinPatient = null;
+  $('walkin-modal-sub').textContent = state.queueDate === today()
+    ? 'Search existing patient or enter quick details'
+    : `Adding to the queue for ${state.queueDate} — search existing patient or enter quick details`;
   $('walkin-modal').classList.add('open');
   setTimeout(() => $('wf-name').focus(), 100);
+  refreshAllTextareaSizes();
 }
 
 function openApptModal() {
@@ -869,6 +969,7 @@ function openApptModal() {
   $('appt-selected-date-label').textContent = '— click a date above —';
   renderBigCalendar();
   $('appt-modal').classList.add('open');
+  refreshAllTextareaSizes();
 }
 
 function openServeModal(queueId) {
@@ -1000,6 +1101,16 @@ async function handleInvestSave() {
     if (!data.success) throw new Error(data.message);
     if (!recordId) $('iv-record-id').value = data.id;
     state.investOriginal = investigations;
+
+    // If the full OPD form for this same visit is open behind this popup, reflect
+    // the just-saved investigations into it immediately — no reload/reopen needed.
+    if ($('opd-modal').classList.contains('open') && parseInt($('of2-queue-entry-id').value) === entry.id) {
+      if (!$('of2-id').value) $('of2-id').value = data.id;
+      clearInvestigationRows('opd-invest-list');
+      if (investigations.length) investigations.forEach(inv => addInvestigationRow('opd-invest-list', inv));
+      else addInvestigationRow('opd-invest-list');
+    }
+
     toast('success', 'Investigations saved');
     closeModal('invest-modal');
   } catch (err) {
@@ -1099,6 +1210,9 @@ async function openOpdModal(entry) {
   $('opd-strip-name').textContent = entry.patient_name || '—';
   $('opd-strip-mobile').textContent = entry.mobile || '—';
   $('opd-strip-age').textContent = pat?.age ? `${pat.age}Y ${pat.gender || ''}`.trim() : '—';
+  $('of2-patient-id-visible').value = pat?.patient_id || '';
+  $('of2-patient-id-visible').disabled = true;
+  $('of2-patient-id-visible').placeholder = 'First visit — enter/confirm ID';
   ['of2-history', 'of2-prev-illness', 'of2-signs', 'of2-diagnosis', 'of2-invest-prev',
     'of2-advice', 'of2-followup', 'of2-vital-bp', 'of2-vital-pulse', 'of2-vital-weight', 'of2-vital-height']
     .forEach(id => { $(id).value = ''; $(id).classList.remove('autofilled'); });
@@ -1107,7 +1221,9 @@ async function openOpdModal(entry) {
   clearInvestigationRows('opd-invest-list');
   addInvestigationRow('opd-invest-list');
   $('opd-modal-sub').textContent = `History & prescription for ${entry.patient_name}`;
+  $('opd-newvisit-date').textContent = state.queueDate || today();
   $('opd-modal').classList.add('open');
+  refreshAllTextareaSizes();
 
   let existing = null;
   try {
@@ -1134,6 +1250,10 @@ async function openOpdModal(entry) {
     if (lastVitals.pulse) setAutofilledVital('of2-vital-pulse', lastVitals.pulse);
     if (lastVitals.weight) setAutofilledVital('of2-vital-weight', lastVitals.weight);
     if (lastVitals.height) setAutofilledVital('of2-vital-height', lastVitals.height);
+  } else {
+    // First visit for this patient — no OPD history to protect, so let the
+    // doctor enter or correct the Patient ID directly.
+    $('of2-patient-id-visible').disabled = false;
   }
 }
 
@@ -1147,9 +1267,64 @@ function setAutofilledVital(id, value) {
   el.classList.add('autofilled');
 }
 
+// ─── Auto-bulleted Advice textarea ─────────────────────
+// Each Enter starts a new "- " bullet line automatically, so the doctor can just
+// type one point per line without manually adding the dash each time.
+function insertAtCursor(el, text) {
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  el.value = el.value.slice(0, start) + text + el.value.slice(end);
+  const pos = start + text.length;
+  el.selectionStart = el.selectionEnd = pos;
+}
+
+function bindAdviceBullets(id) {
+  const el = $(id);
+  el.addEventListener('focus', () => {
+    if (!el.value) insertAtCursor(el, '- ');
+  });
+  el.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      insertAtCursor(el, '\n- ');
+    }
+  });
+}
+
 // ─── Medicine rows (structured Prescription / Medicines) ──
 function clearMedicineRows() {
   $('opd-med-list').innerHTML = '';
+}
+
+// Builds a <select> dropdown + a hidden "Other" text fallback for a field whose
+// value might not be on the fixed picklist.
+function dropdownFieldHtml(cls, options, value) {
+  const isOther = value && !options.includes(value);
+  const opts = options.map(o => `<option value="${escapeAttr(o)}" ${value === o ? 'selected' : ''}>${o}</option>`).join('');
+  return `
+    <select class="${cls}">
+      <option value="">Select…</option>
+      ${opts}
+      <option value="__other__" ${isOther ? 'selected' : ''}>Other (type manually)</option>
+    </select>
+    <input type="text" class="${cls}-other" placeholder="Type custom value" value="${isOther ? escapeAttr(value) : ''}"
+      style="margin-top:4px; ${isOther ? '' : 'display:none;'}" />
+  `;
+}
+
+function bindOtherToggle(row, cls) {
+  const select = row.querySelector(`.${cls}`);
+  const other = row.querySelector(`.${cls}-other`);
+  select.addEventListener('change', () => {
+    other.style.display = select.value === '__other__' ? '' : 'none';
+    if (select.value === '__other__') other.focus();
+  });
+}
+
+function fieldValue(row, cls) {
+  const select = row.querySelector(`.${cls}`);
+  if (select.value === '__other__') return row.querySelector(`.${cls}-other`).value.trim();
+  return select.value;
 }
 
 function addMedicineRow(med = {}) {
@@ -1157,14 +1332,15 @@ function addMedicineRow(med = {}) {
   const row = document.createElement('div');
   row.className = 'opd-med-row';
   row.innerHTML = `
-    <div><label>Medicine</label><input type="text" class="med-name" list="med-name-options" placeholder="e.g. Paracetamol 500mg" value="${escapeAttr(med.name)}" /></div>
-    <div><label>Dose</label><input type="text" class="med-dose" list="med-dose-options" placeholder="1 tablet" value="${escapeAttr(med.dose)}" /></div>
-    <div><label>Frequency</label><input type="text" class="med-frequency" list="med-frequency-options" placeholder="1-1-1" value="${escapeAttr(med.frequency)}" /></div>
-    <div><label>Duration</label><input type="text" class="med-duration" list="med-duration-options" placeholder="3 days" value="${escapeAttr(med.duration)}" /></div>
-    <div><label>Route</label><input type="text" class="med-route" list="med-route-options" placeholder="Oral" value="${escapeAttr(med.route)}" /></div>
-    <div><label>Instruction</label><input type="text" class="med-instruction" list="med-instruction-options" placeholder="After food" value="${escapeAttr(med.instruction)}" /></div>
+    <div><label>Medicine</label>${dropdownFieldHtml('med-name', MED_NAME_OPTIONS, med.name)}</div>
+    <div><label>Dose</label>${dropdownFieldHtml('med-dose', MED_DOSE_OPTIONS, med.dose)}</div>
+    <div><label>Frequency</label>${dropdownFieldHtml('med-frequency', MED_FREQUENCY_OPTIONS, med.frequency)}</div>
+    <div><label>Duration</label>${dropdownFieldHtml('med-duration', MED_DURATION_OPTIONS, med.duration)}</div>
+    <div><label>Route</label>${dropdownFieldHtml('med-route', MED_ROUTE_OPTIONS, med.route)}</div>
+    <div><label>Instruction</label>${dropdownFieldHtml('med-instruction', MED_INSTRUCTION_OPTIONS, med.instruction)}</div>
     <button type="button" class="opd-med-remove" title="Remove">✕</button>
   `;
+  ['med-name', 'med-dose', 'med-frequency', 'med-duration', 'med-route', 'med-instruction'].forEach(cls => bindOtherToggle(row, cls));
   row.querySelector('.opd-med-remove').addEventListener('click', () => row.remove());
   list.appendChild(row);
 }
@@ -1176,12 +1352,12 @@ function escapeAttr(str) {
 
 function collectMedicines() {
   return Array.from($('opd-med-list').querySelectorAll('.opd-med-row')).map(row => ({
-    name: row.querySelector('.med-name').value.trim(),
-    dose: row.querySelector('.med-dose').value.trim(),
-    frequency: row.querySelector('.med-frequency').value.trim(),
-    duration: row.querySelector('.med-duration').value.trim(),
-    route: row.querySelector('.med-route').value.trim(),
-    instruction: row.querySelector('.med-instruction').value.trim(),
+    name: fieldValue(row, 'med-name'),
+    dose: fieldValue(row, 'med-dose'),
+    frequency: fieldValue(row, 'med-frequency'),
+    duration: fieldValue(row, 'med-duration'),
+    route: fieldValue(row, 'med-route'),
+    instruction: fieldValue(row, 'med-instruction'),
   })).filter(m => m.name);
 }
 
@@ -1284,6 +1460,8 @@ function fillOpdForm(rec) {
   try { invs = rec.investigations ? JSON.parse(rec.investigations) : []; } catch { invs = []; }
   if (invs.length) invs.forEach(i => addInvestigationRow('opd-invest-list', i));
   else addInvestigationRow('opd-invest-list');
+
+  refreshAllTextareaSizes();
 }
 
 async function loadOpdHistory(entry) {
@@ -1307,9 +1485,9 @@ async function loadOpdHistory(entry) {
       panel.innerHTML = '<span class="opd-hist-empty">No previous records found.</span>';
       return records;
     }
-    panel.innerHTML = records.map(r => `
+    panel.innerHTML = records.map((r, idx) => `
       <div class="opd-hist-item" data-id="${r.id}">
-        <span>${(r.diagnosis || r.history || 'No diagnosis recorded').slice(0, 60)}</span>
+        <span>${idx === 0 ? 'Latest Visit' : 'Visit'}</span>
         <span class="opd-hist-date">${r.visit_date || ''}</span>
       </div>
     `).join('');
@@ -1317,16 +1495,75 @@ async function loadOpdHistory(entry) {
       item.addEventListener('click', () => {
         const rec = state.opdHistory.find(r => String(r.id) === item.dataset.id);
         if (!rec) return;
-        fillOpdForm(rec);
+        renderHistDetail(rec);
         panel.querySelectorAll('.opd-hist-item').forEach(i => i.classList.remove('active'));
         item.classList.add('active');
       });
     });
+    renderHistDetail(records[0]);
+    const firstItem = panel.querySelector('.opd-hist-item');
+    if (firstItem) firstItem.classList.add('active');
     return records;
   } catch (e) {
     panel.innerHTML = '<span class="opd-hist-empty">Failed to load history.</span>';
+    $('opd-hist-detail').innerHTML = '';
     return [];
   }
+}
+
+// Read-only detail view for a past OPD record — shown on the left so the doctor
+// can reference old data while filling in today's visit on the right, without the
+// old record ever overwriting the new visit's form fields.
+function renderHistDetail(rec) {
+  const detail = $('opd-hist-detail');
+  if (!rec) { detail.innerHTML = ''; return; }
+
+  let vitals = {};
+  try { vitals = rec.vitals ? JSON.parse(rec.vitals) : {}; } catch { vitals = {}; }
+  let meds = [];
+  try { meds = rec.medicines ? JSON.parse(rec.medicines) : []; } catch { meds = []; }
+  let invs = [];
+  try { invs = rec.investigations ? JSON.parse(rec.investigations) : []; } catch { invs = []; }
+
+  // Renders a block of lines as a dash-bulleted list, one "- " per line, so every
+  // multi-item section (medicines, investigations, advice…) reads consistently.
+  const bulletList = (lines) => lines.filter(Boolean).map(l => `- ${escapeAttr(l)}`).join('\n');
+
+  state.viewingHistRecord = rec;
+  const rows = [];
+  rows.push(`<div class="ohd-row"><span class="ohd-label">Visit Date</span><div class="ohd-value">${rec.visit_date || '—'} · Referred by ${rec.doctor_name || DEFAULT_REFERRED_BY}</div>
+    <button type="button" class="opd-view-page-btn" onclick="viewOpdRecordPage(state.viewingHistRecord)">📄 View as Full Page</button></div>`);
+
+  const vitalChips = ['bp', 'pulse', 'weight', 'height'].filter(k => vitals[k])
+    .map(k => `<span class="ohd-vital-chip">${k.toUpperCase()}: ${vitals[k]}</span>`).join('');
+  if (vitalChips) rows.push(`<div class="ohd-row ohd-vitals-row"><span class="ohd-label">Vitals</span><div class="ohd-vitals">${vitalChips}</div></div>`);
+
+  const textField = (label, val, cls = '') => val ? `<div class="ohd-row ${cls}"><span class="ohd-label">${label}</span><div class="ohd-value">${escapeAttr(val)}</div></div>` : '';
+  rows.push(textField('History / Complaints', rec.history, 'ohd-history-row'));
+  rows.push(textField('Previous Illness', rec.previous_illness, 'ohd-illness-row'));
+  rows.push(textField('Signs / Examination', rec.signs_examination, 'ohd-signs-row'));
+  rows.push(textField('Diagnosis', rec.diagnosis, 'ohd-diagnosis-row'));
+
+  if (invs.length) {
+    const invLines = invs.map(i => [i.type, i.detail].filter(Boolean).join(' - ') + (i.comment ? ` → ${i.comment}` : ''));
+    rows.push(`<div class="ohd-row ohd-invest-row"><span class="ohd-label">Investigations Advised</span><div class="ohd-value">${bulletList(invLines)}</div></div>`);
+  }
+  if (rec.previous_investigations) {
+    const prevLines = String(rec.previous_investigations).split('\n');
+    rows.push(`<div class="ohd-row ohd-previnvest-row"><span class="ohd-label">Previous Investigations</span><div class="ohd-value">${bulletList(prevLines)}</div></div>`);
+  }
+
+  if (meds.length) {
+    const medLines = meds.map(m => [m.name, [m.dose, m.frequency, m.duration].filter(Boolean).join(' | '), m.instruction].filter(Boolean).join(' — '));
+    rows.push(`<div class="ohd-row ohd-meds-row"><span class="ohd-label">Medicines</span><div class="ohd-value">${bulletList(medLines)}</div></div>`);
+  }
+  if (rec.advice) {
+    const adviceLines = String(rec.advice).split('\n').map(l => l.replace(/^-\s*/, ''));
+    rows.push(`<div class="ohd-row ohd-advice-row"><span class="ohd-label">Advice</span><div class="ohd-value">${bulletList(adviceLines)}</div></div>`);
+  }
+  rows.push(textField('Follow-up Date', rec.follow_up_date, 'ohd-followup-row'));
+
+  detail.innerHTML = rows.filter(Boolean).join('');
 }
 
 function buildOpdPayload() {
@@ -1394,7 +1631,47 @@ async function saveOpdRecord(payload) {
     }).catch(e => console.error('[OPD] patient vitals sync failed', e));
   }
 
+  // First-visit patients can have their Patient ID entered/corrected right here —
+  // push it back to the patient's profile so it's recorded going forward.
+  const idField = $('of2-patient-id-visible');
+  if (payload.patient_id && idField && !idField.disabled && idField.value.trim()) {
+    fetch(`${PAT_API}/${payload.patient_id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ patient_id: idField.value.trim() }),
+    }).then(() => {
+      const pat = state.allPatients.find(p => String(p.id) === String(payload.patient_id));
+      if (pat) pat.patient_id = idField.value.trim();
+    }).catch(e => console.error('[OPD] patient ID sync failed', e));
+  }
+
   return { id: id || data.id, ...payload };
+}
+
+// After the doctor saves the OPD record for a patient who was CALLED/SERVING,
+// the visit is clinically finished — mark it DONE in the queue and hand control
+// back to reception (who'll fill in Amount Paid / follow-up booking separately
+// via the ✏️ Edit action on the now-Done card). Re-saving an already-Done record
+// (editing later) just updates the OPD data without touching queue status.
+async function finishVisitAfterOpdSave(followUpDate) {
+  const queueId = parseInt($('of2-queue-entry-id').value);
+  const entry = state.queue.find(q => q.id === queueId);
+  if (!entry || !(entry.status === 'CALLED' || entry.status === 'SERVING')) return;
+
+  await queueAction(queueId, 'complete', {
+    status: 'DONE',
+    amount_paid: entry.amount_paid || 0,
+    follow_up_date: followUpDate || entry.follow_up_date || undefined,
+  });
+
+  if (state.autoCallNext) {
+    setTimeout(async () => {
+      const waiting = state.queue.filter(x => x.status === 'WAITING');
+      if (waiting.length > 0) await queueAction(waiting[0].id, 'call');
+      state.autoCallNext = false;
+      updateQueueButtonState();
+    }, 400);
+  }
 }
 
 async function handleOpdInlineSubmit(e) {
@@ -1404,7 +1681,8 @@ async function handleOpdInlineSubmit(e) {
 
   try {
     await saveOpdRecord(payload);
-    toast('success', 'OPD record saved');
+    await finishVisitAfterOpdSave(payload.follow_up_date);
+    toast('success', 'Visit completed — reception can now finalize payment');
     closeModal('opd-modal');
   } catch (err) {
     toast('error', err.message || 'Failed to save OPD record');
@@ -1417,6 +1695,7 @@ async function handleOpdPrint() {
 
   try {
     const saved = await saveOpdRecord(payload);
+    await finishVisitAfterOpdSave(payload.follow_up_date);
     toast('success', 'OPD record saved — opening print preview…');
     printOpdRecord(saved);
   } catch (err) {
@@ -1424,9 +1703,24 @@ async function handleOpdPrint() {
   }
 }
 
+// Opens a past OPD record in the same clinic-letterhead page format used for
+// printing — but purely for viewing, with an on-page Print button instead of
+// auto-triggering the print dialog. Lets the doctor review an old visit exactly
+// as it would appear on paper.
+function viewOpdRecordPage(rec) {
+  let vitals = {};
+  try { vitals = typeof rec.vitals === 'string' ? JSON.parse(rec.vitals || '{}') : (rec.vitals || {}); } catch { vitals = {}; }
+  let medicines = [];
+  try { medicines = typeof rec.medicines === 'string' ? JSON.parse(rec.medicines || '[]') : (rec.medicines || []); } catch { medicines = []; }
+  let investigations = [];
+  try { investigations = typeof rec.investigations === 'string' ? JSON.parse(rec.investigations || '[]') : (rec.investigations || []); } catch { investigations = []; }
+  printOpdRecord({ ...rec, vitals, medicines, investigations }, { autoPrint: false });
+}
+
 // ─── Printable Prescription ───────────────────────────
-function printOpdRecord(rec) {
-  const age = $('opd-strip-age').textContent !== '—' ? $('opd-strip-age').textContent : '';
+function printOpdRecord(rec, opts = {}) {
+  const autoPrint = opts.autoPrint !== false;
+  const age = ($('opd-strip-age').textContent !== '—' ? $('opd-strip-age').textContent : '') || (rec.age ? `${rec.age}Y ${rec.gender || ''}`.trim() : '');
   const opdNo = rec.id ? `OPD-${rec.id}` : '—';
   const medsHtml = (rec.medicines || []).length
     ? `<table class="rx-med-table">
@@ -1466,7 +1760,8 @@ function printOpdRecord(rec) {
       .rx-med-table th, .rx-med-table td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; }
       .rx-med-table th { background: #eff6ff; }
       .rx-empty { font-size: 12.5px; color: #94a3b8; font-style: italic; }
-      .rx-footer { display: flex; justify-content: space-between; margin-top: 50px; }
+      .rx-emergency-note { font-size: 12px; font-style: italic; color: #475569; margin-top: 20px; }
+      .rx-footer { display: flex; justify-content: space-between; margin-top: 20px; }
       .rx-signature { text-align: center; font-size: 12.5px; }
       .rx-signature .line { border-top: 1px solid #1e293b; width: 200px; margin: 30px auto 4px; }
       @media print { body { padding: 10px; } }
@@ -1507,6 +1802,8 @@ function printOpdRecord(rec) {
       <div class="rx-section"><h4>Advice</h4><p>${rec.advice || '—'}</p></div>
       <div class="rx-section"><h4>Follow-up Date</h4><p>${rec.follow_up_date || '—'}</p></div>
 
+      <p class="rx-emergency-note">Please follow-up in case of emergency with prior appointment.</p>
+
       <div class="rx-footer">
         <div></div>
         <div class="rx-signature">
@@ -1515,7 +1812,8 @@ function printOpdRecord(rec) {
         </div>
       </div>
 
-      <script>window.onload = () => window.print();</script>
+      ${autoPrint ? '' : '<button id="rx-print-btn" style="margin-top:20px; padding:10px 18px; font-size:13px; font-weight:600; border:none; border-radius:6px; background:#0d9488; color:#fff; cursor:pointer;" onclick="window.print()">🖨️ Print This Page</button>'}
+      <script>${autoPrint ? 'window.onload = () => window.print();' : ''}</script>
     </body></html>
   `);
   win.document.close();
@@ -1588,7 +1886,7 @@ async function handleWalkinSubmit(e) {
     const res = await fetch(QUEUE_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...data, ticket_type: 'WALKIN', queue_date: today() }),
+      body: JSON.stringify({ ...data, ticket_type: 'WALKIN', queue_date: state.queueDate }),
     });
     const result = await res.json();
     if (result.success) {
@@ -1638,7 +1936,7 @@ async function handleApptSubmit(e) {
 // Doctor said "go get the X-Ray and come back today with the report" — pause
 // the visit without completing it or booking a future-dated follow-up.
 async function handleHoldVisit() {
-  const queueId = parseInt($('sf-queue-id').value);
+  const queueId = parseInt($('of2-queue-entry-id').value);
   const entry = state.queue.find(q => q.id === queueId);
   if (!entry) return;
 
@@ -1651,7 +1949,7 @@ async function handleHoldVisit() {
   const result = await queueAction(queueId, 'hold', { reason: reason.trim() || undefined });
   if (result?.success) {
     toast('success', `⏸ ${entry.patient_name} put on hold — will resume when back`);
-    closeModal('serve-modal');
+    closeModal('opd-modal');
   }
 }
 

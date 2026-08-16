@@ -5,7 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Queue Management</title>
-  <link rel="stylesheet" href="QueueMang.css" />
+  <link rel="stylesheet" href="QueueMang.css?v=8" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -14,78 +14,6 @@
 </head>
 
 <body>
-
-  <!-- Shared dropdown suggestion lists for the medicine rows (type-to-filter, still free text) -->
-  <datalist id="med-name-options">
-    <option value="Paracetamol 500mg"></option>
-    <option value="Ibuprofen 400mg"></option>
-    <option value="Diclofenac 50mg"></option>
-    <option value="Aceclofenac + Paracetamol"></option>
-    <option value="Etoricoxib 90mg"></option>
-    <option value="Tramadol 50mg"></option>
-    <option value="Calcium + Vitamin D3"></option>
-    <option value="Methylcobalamin"></option>
-    <option value="Pantoprazole 40mg"></option>
-    <option value="Chymoral Forte"></option>
-  </datalist>
-  <datalist id="med-dose-options">
-    <option value="1 tablet"></option>
-    <option value="2 tablets"></option>
-    <option value="1 capsule"></option>
-    <option value="5 ml"></option>
-    <option value="10 ml"></option>
-    <option value="1 tsp"></option>
-    <option value="1 injection"></option>
-    <option value="Apply locally"></option>
-    <option value="1 drop"></option>
-    <option value="2 drops"></option>
-  </datalist>
-  <datalist id="med-frequency-options">
-    <option value="1-0-0"></option>
-    <option value="0-1-0"></option>
-    <option value="0-0-1"></option>
-    <option value="1-1-1"></option>
-    <option value="1-0-1"></option>
-    <option value="1-1-0"></option>
-    <option value="0-1-1"></option>
-    <option value="Once daily"></option>
-    <option value="Twice daily"></option>
-    <option value="Thrice daily"></option>
-    <option value="Every 6 hours"></option>
-    <option value="Every 8 hours"></option>
-    <option value="SOS (as needed)"></option>
-    <option value="Stat"></option>
-  </datalist>
-  <datalist id="med-duration-options">
-    <option value="3 days"></option>
-    <option value="5 days"></option>
-    <option value="7 days"></option>
-    <option value="10 days"></option>
-    <option value="14 days"></option>
-    <option value="1 month"></option>
-    <option value="Until finished"></option>
-    <option value="SOS (as needed)"></option>
-  </datalist>
-  <datalist id="med-route-options">
-    <option value="Oral"></option>
-    <option value="Topical"></option>
-    <option value="IV"></option>
-    <option value="IM"></option>
-    <option value="Subcutaneous"></option>
-    <option value="Inhalation"></option>
-    <option value="Eye drops"></option>
-    <option value="Ear drops"></option>
-    <option value="Nasal"></option>
-  </datalist>
-  <datalist id="med-instruction-options">
-    <option value="After food"></option>
-    <option value="Before food"></option>
-    <option value="With food"></option>
-    <option value="Empty stomach"></option>
-    <option value="At bedtime"></option>
-    <option value="Before breakfast"></option>
-    <option value="As needed (SOS)"></option>
-  </datalist>
 
   <!-- TOPBAR -->
   <header class="topbar">
@@ -213,6 +141,12 @@
         <div class="toolbar-left">
           <span class="section-title">Live Queue</span>
           <span class="queue-badge" id="queue-count-badge">0 in queue</span>
+          <div class="queue-date-nav">
+            <button type="button" class="cal-nav" id="queue-date-prev" title="Previous day">‹</button>
+            <input type="date" id="queue-date-input" />
+            <button type="button" class="cal-nav" id="queue-date-next" title="Next day">›</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="queue-date-today" title="Jump to today">Today</button>
+          </div>
         </div>
         <div class="toolbar-right">
           <button class="btn btn-start-queue" id="start-queue-btn">
@@ -298,7 +232,7 @@
       <div class="modal-header">
         <div>
           <h2 class="modal-title">Add Walk-in</h2>
-          <p class="modal-sub">Search existing patient or enter quick details</p>
+          <p class="modal-sub" id="walkin-modal-sub">Search existing patient or enter quick details</p>
         </div>
         <button class="modal-close" id="close-walkin">
           <svg viewBox="0 0 20 20" fill="none">
@@ -523,25 +457,6 @@
             </div>
 
             <div class="form-group full-width">
-              <div class="serve-action-grid">
-                <button type="button" class="serve-action-card serve-action-opd" id="btn-open-opd">
-                  <span class="serve-action-icon">📋</span>
-                  <span class="serve-action-text">
-                    <span class="serve-action-title">Full OPD Record</span>
-                    <span class="serve-action-sub">History, diagnosis & Rx</span>
-                  </span>
-                </button>
-                <button type="button" class="serve-action-card serve-action-invest" id="btn-open-invest">
-                  <span class="serve-action-icon">🧪</span>
-                  <span class="serve-action-text">
-                    <span class="serve-action-title">Investigations Advised</span>
-                    <span class="serve-action-sub">X-Ray, MRI, Labs…</span>
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            <div class="form-group full-width">
               <label>Next Appointment (Follow-up) 📅</label>
               <div style="display: flex; gap: 8px;">
                 <input type="date" id="sf-followup" name="follow_up_date" style="flex: 1;" />
@@ -551,7 +466,6 @@
           </div>
           <div class="form-actions" style="margin-top: 15px;">
             <button type="button" class="btn btn-ghost" id="cancel-serve">Cancel</button>
-            <button type="button" class="btn btn-hold" id="btn-hold-visit" title="Patient has gone for an investigation and will return today with the report">⏸ Hold (Back Today)</button>
             <button type="submit" class="btn btn-primary">Save & Update</button>
           </div>
         </form>
@@ -563,7 +477,7 @@
   <!-- MODAL: OPD RECORD                        -->
   <!-- ════════════════════════════════════════ -->
   <div class="modal-overlay" id="opd-modal">
-    <div class="modal modal-lg" role="dialog">
+    <div class="modal modal-xl" role="dialog">
       <div class="modal-header opd-modal-header">
         <div class="opd-modal-header-top">
           <div>
@@ -593,15 +507,29 @@
             <span class="opd-patient-label">Referred by</span>
             <input type="text" id="of2-doctor" name="doctor_name" class="opd-referred-input" placeholder="Dr. Name" />
           </div>
+          <div class="opd-patient-field" id="opd-patient-id-field">
+            <span class="opd-patient-label">Patient ID</span>
+            <input type="text" id="of2-patient-id-visible" class="opd-referred-input" placeholder="First visit — enter/confirm ID" />
+          </div>
+          <button type="button" class="btn-quick-invest" id="opd-quick-invest-btn" title="Send patient for X-Ray, MRI, labs, etc. without filling the full record">
+            🧪 Investigations Advised
+          </button>
         </div>
       </div>
-      <div class="modal-body">
-
-        <label class="form-label">Previous OPD Records for this patient</label>
-        <div class="opd-history-panel" id="opd-history-panel">
-          <span class="opd-hist-empty">No previous records found.</span>
+      <div class="modal-body opd-modal-body">
+       <div class="opd-two-col">
+        <div class="opd-col-left" id="opd-col-left">
+          <div class="opd-left-heading">
+            <span class="opd-left-title">📖 Patient History</span>
+            <span class="opd-left-sub">Read-only — for reference only</span>
+          </div>
+          <div class="opd-history-panel" id="opd-history-panel">
+            <span class="opd-hist-empty">No previous records found.</span>
+          </div>
+          <div class="opd-hist-detail" id="opd-hist-detail"></div>
         </div>
-
+        <div class="opd-col-right">
+        <label class="form-label opd-newvisit-label">📝 New Visit Entry — <span id="opd-newvisit-date"></span></label>
         <form id="opd-inline-form" novalidate>
           <input type="hidden" id="of2-id" />
           <input type="hidden" id="of2-queue-entry-id" />
@@ -674,13 +602,15 @@
               <input type="date" id="of2-followup" name="follow_up_date" />
             </div>
           </div>
-
-          <div class="form-actions">
-            <button type="button" class="btn btn-ghost" id="cancel-opd-modal">Cancel</button>
-            <button type="button" class="btn btn-secondary" id="opd-print-btn">🖨️ Save & Print Prescription</button>
-            <button type="submit" class="btn btn-primary">Save OPD Record</button>
-          </div>
         </form>
+        </div>
+       </div>
+      </div>
+      <div class="form-actions opd-modal-footer">
+        <button type="button" class="btn btn-ghost" id="cancel-opd-modal">Cancel</button>
+        <button type="button" class="btn btn-hold" id="opd-hold-btn" title="Patient has gone for an investigation and will return today with the report">⏸ Hold (Back Today)</button>
+        <button type="button" class="btn btn-secondary" id="opd-print-btn">🖨️ Save & Print Prescription</button>
+        <button type="submit" form="opd-inline-form" class="btn btn-primary" id="opd-save-submit-btn">Save OPD Record</button>
       </div>
     </div>
   </div>
@@ -748,7 +678,7 @@
     </div>
   </div>
 
-  <script src="QueueMang.js"></script>
+  <script src="QueueMang.js?v=6"></script>
 </body>
 
 </html>

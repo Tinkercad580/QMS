@@ -16,78 +16,6 @@
 
 <body>
 
-  <!-- Shared dropdown suggestion lists for the medicine rows (type-to-filter, still free text) -->
-  <datalist id="med-name-options">
-    <option value="Paracetamol 500mg"></option>
-    <option value="Ibuprofen 400mg"></option>
-    <option value="Diclofenac 50mg"></option>
-    <option value="Aceclofenac + Paracetamol"></option>
-    <option value="Etoricoxib 90mg"></option>
-    <option value="Tramadol 50mg"></option>
-    <option value="Calcium + Vitamin D3"></option>
-    <option value="Methylcobalamin"></option>
-    <option value="Pantoprazole 40mg"></option>
-    <option value="Chymoral Forte"></option>
-  </datalist>
-  <datalist id="med-dose-options">
-    <option value="1 tablet"></option>
-    <option value="2 tablets"></option>
-    <option value="1 capsule"></option>
-    <option value="5 ml"></option>
-    <option value="10 ml"></option>
-    <option value="1 tsp"></option>
-    <option value="1 injection"></option>
-    <option value="Apply locally"></option>
-    <option value="1 drop"></option>
-    <option value="2 drops"></option>
-  </datalist>
-  <datalist id="med-frequency-options">
-    <option value="1-0-0"></option>
-    <option value="0-1-0"></option>
-    <option value="0-0-1"></option>
-    <option value="1-1-1"></option>
-    <option value="1-0-1"></option>
-    <option value="1-1-0"></option>
-    <option value="0-1-1"></option>
-    <option value="Once daily"></option>
-    <option value="Twice daily"></option>
-    <option value="Thrice daily"></option>
-    <option value="Every 6 hours"></option>
-    <option value="Every 8 hours"></option>
-    <option value="SOS (as needed)"></option>
-    <option value="Stat"></option>
-  </datalist>
-  <datalist id="med-duration-options">
-    <option value="3 days"></option>
-    <option value="5 days"></option>
-    <option value="7 days"></option>
-    <option value="10 days"></option>
-    <option value="14 days"></option>
-    <option value="1 month"></option>
-    <option value="Until finished"></option>
-    <option value="SOS (as needed)"></option>
-  </datalist>
-  <datalist id="med-route-options">
-    <option value="Oral"></option>
-    <option value="Topical"></option>
-    <option value="IV"></option>
-    <option value="IM"></option>
-    <option value="Subcutaneous"></option>
-    <option value="Inhalation"></option>
-    <option value="Eye drops"></option>
-    <option value="Ear drops"></option>
-    <option value="Nasal"></option>
-  </datalist>
-  <datalist id="med-instruction-options">
-    <option value="After food"></option>
-    <option value="Before food"></option>
-    <option value="With food"></option>
-    <option value="Empty stomach"></option>
-    <option value="At bedtime"></option>
-    <option value="Before breakfast"></option>
-    <option value="As needed (SOS)"></option>
-  </datalist>
-
   <!-- TOPBAR -->
   <header class="topbar">
     <div class="topbar-left">
@@ -144,6 +72,10 @@
             <div class="form-group">
               <label>Mobile No.</label>
               <input type="tel" id="of-mobile" name="mobile" placeholder="+91 …" />
+            </div>
+            <div class="form-group">
+              <label>Patient ID</label>
+              <input type="text" id="of-patient-id-visible" placeholder="First visit — enter/confirm ID" />
             </div>
             <div class="form-group">
               <label>Age</label>

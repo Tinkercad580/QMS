@@ -20,7 +20,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 // app.use(express.static(path.join(__dirname, '../')));
-app.use(express.static(path.join(__dirname, '../../frontend')));
+app.use(express.static(path.join(__dirname, '../frontend')));
 
 // ─── Patient & Visit Routes ────────────────────────────────────
 app.use('/api/patients', patientRouter);
@@ -31,22 +31,22 @@ app.use('/api/opd', opdRouter);
 app.use('/api/dashboard', dashboardRouter);
 
 
-// ─── Serve add-pabdc.html ──────────────────────────────────────
+// ─── Serve add-pandc.html ──────────────────────────────────────
 app.get('/patients', (req, res) => {
-  res.sendFile(path.join(__dirname, '../add-pabdc.html'));
+  res.sendFile(path.join(__dirname, '../frontend/add-pandc.html'));
 });
 
 app.get('/queue', (_req, res) => {
-  res.sendFile(path.join(__dirname, '../QueueMang.html'));
+  res.sendFile(path.join(__dirname, '../frontend/QueueMang.html'));
 });
 
 app.get('/opd', (_req, res) => {
-  res.sendFile(path.join(__dirname, '../OPD.html'));
+  res.sendFile(path.join(__dirname, '../frontend/OPD.html'));
 });
 
-// Serve dashboard.html
-app.get('/', (_req, res) => res.sendFile(path.join(__dirname, '../dashboard.html')));
-app.get('/dashboard', (_req, res) => res.sendFile(path.join(__dirname, '../dashboard.html')));
+// Serve index.html (dashboard)
+app.get('/', (_req, res) => res.sendFile(path.join(__dirname, '../frontend/index.html')));
+app.get('/dashboard', (_req, res) => res.sendFile(path.join(__dirname, '../frontend/index.html')));
 app.get('/api/dashboard/ping', (_req, res) => res.json({ ok: true }));
 
 

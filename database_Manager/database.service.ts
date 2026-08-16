@@ -135,9 +135,11 @@ class DynamicDatabaseService {
         const cols = this.db.prepare(`PRAGMA table_info(patient_visits)`).all() as any[];
         if (!cols.some(c => c.name === 'queue_entry_id')) {
           this.db.exec(`ALTER TABLE patient_visits ADD COLUMN queue_entry_id INTEGER`);
-          this.db.exec(`CREATE INDEX IF NOT EXISTS idx_visits_queue_entry ON patient_visits(queue_entry_id)`);
           console.log(`✅ ${this.dbName}: Migration applied — queue_entry_id added to patient_visits`);
         }
+        // Column is guaranteed to exist above (either pre-existing or just added) —
+        // safe to (re)create the index unconditionally, on both fresh and upgraded DBs.
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_visits_queue_entry ON patient_visits(queue_entry_id)`);
       }
 
       const opdExists = this.db.prepare(

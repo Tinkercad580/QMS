@@ -14,6 +14,31 @@ const CLINIC_INFO = {
   doctorRegNo: 'Reg. No. 77425',
 };
 
+// Dropdown option sets for the Prescription / Medicines rows (real <select> — not
+// suggestion-only datalists — so the field always shows a fixed picklist; "Other"
+// reveals a text box for anything not on the list).
+const MED_NAME_OPTIONS = [
+  'Paracetamol 500mg', 'Ibuprofen 400mg', 'Diclofenac 50mg', 'Aceclofenac + Paracetamol',
+  'Etoricoxib 90mg', 'Tramadol 50mg', 'Calcium + Vitamin D3', 'Methylcobalamin',
+  'Pantoprazole 40mg', 'Chymoral Forte',
+];
+const MED_DOSE_OPTIONS = [
+  '1 tablet', '2 tablets', '1 capsule', '5 ml', '10 ml', '1 tsp', '1 injection', 'Apply locally', '1 drop', '2 drops',
+];
+const MED_FREQUENCY_OPTIONS = [
+  '1-0-0', '0-1-0', '0-0-1', '1-1-1', '1-0-1', '1-1-0', '0-1-1',
+  'Once daily', 'Twice daily', 'Thrice daily', 'Every 6 hours', 'Every 8 hours', 'SOS (as needed)', 'Stat',
+];
+const MED_DURATION_OPTIONS = [
+  '3 days', '5 days', '7 days', '10 days', '14 days', '1 month', 'Until finished', 'SOS (as needed)',
+];
+const MED_ROUTE_OPTIONS = [
+  'Oral', 'Topical', 'IV', 'IM', 'Subcutaneous', 'Inhalation', 'Eye drops', 'Ear drops', 'Nasal',
+];
+const MED_INSTRUCTION_OPTIONS = [
+  'After food', 'Before food', 'With food', 'Empty stomach', 'At bedtime', 'Before breakfast', 'As needed (SOS)',
+];
+
 // Common investigations for an Ortho / Bone Fracture / Trauma & Spine practice, plus general labs.
 const INVESTIGATION_OPTIONS = [
   'X-Ray', 'MRI', 'CT Scan', 'Bone Density (DEXA)', 'Ultrasound',
@@ -75,19 +100,28 @@ function setAutofilledVital(id, value) {
 }
 
 async function autofillVitalsFromPatient(patientId) {
+  const idField = document.getElementById('of-patient-id-visible');
+  idField.disabled = true;
+
   try {
     const res = await fetch(`${PAT_API}/${patientId}`);
     const data = await res.json();
     const pat = data.patient;
     if (pat?.weight_kg) setAutofilledVital('of-vital-weight', pat.weight_kg);
     if (pat?.height_cm) setAutofilledVital('of-vital-height', pat.height_cm);
+    if (pat?.patient_id) idField.value = pat.patient_id;
   } catch (e) { console.error('[OPD] patient vitals lookup failed', e); }
 
   try {
     const res = await fetch(`${OPD_API}?patient_id=${patientId}`);
     const data = await res.json();
-    const last = (data.records || []).sort((a, b) => b.id - a.id)[0];
-    if (!last) return;
+    const records = data.records || [];
+    if (!records.length) {
+      // First OPD visit for this patient — safe to let the doctor enter/correct the ID.
+      idField.disabled = false;
+      return;
+    }
+    const last = records.sort((a, b) => b.id - a.id)[0];
     let lastVitals = {};
     try { lastVitals = last.vitals ? JSON.parse(last.vitals) : {}; } catch { lastVitals = {}; }
     if (lastVitals.bp) setAutofilledVital('of-vital-bp', lastVitals.bp);
@@ -108,11 +142,16 @@ function resetForm() {
   document.getElementById('of-visit-date').value = new Date().toISOString().slice(0, 10);
   document.getElementById('of-doctor').value = DEFAULT_REFERRED_BY;
   document.getElementById('of-advice').value = '';
+  const idField = document.getElementById('of-patient-id-visible');
+  idField.value = '';
+  idField.disabled = false;
+  idField.placeholder = 'First visit — enter/confirm ID';
   clearMedicineRows();
   addMedicineRow();
   clearInvestigationRows();
   addInvestigationRow();
   state.editingId = null;
+  refreshAllTextareaSizes();
 }
 
 // ─── Medicine rows (structured Prescription / Medicines) ──
@@ -125,31 +164,63 @@ function escapeAttr(str) {
   return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
+// Builds a <select> dropdown + a hidden "Other" text fallback for a field whose
+// value might not be on the fixed picklist.
+function dropdownFieldHtml(cls, options, value) {
+  const isOther = value && !options.includes(value);
+  const opts = options.map(o => `<option value="${escapeAttr(o)}" ${value === o ? 'selected' : ''}>${o}</option>`).join('');
+  return `
+    <select class="${cls}">
+      <option value="">Select…</option>
+      ${opts}
+      <option value="__other__" ${isOther ? 'selected' : ''}>Other (type manually)</option>
+    </select>
+    <input type="text" class="${cls}-other" placeholder="Type custom value" value="${isOther ? escapeAttr(value) : ''}"
+      style="margin-top:4px; ${isOther ? '' : 'display:none;'}" />
+  `;
+}
+
+function bindOtherToggle(row, cls) {
+  const select = row.querySelector(`.${cls}`);
+  const other = row.querySelector(`.${cls}-other`);
+  select.addEventListener('change', () => {
+    other.style.display = select.value === '__other__' ? '' : 'none';
+    if (select.value === '__other__') other.focus();
+  });
+}
+
+function fieldValue(row, cls) {
+  const select = row.querySelector(`.${cls}`);
+  if (select.value === '__other__') return row.querySelector(`.${cls}-other`).value.trim();
+  return select.value;
+}
+
 function addMedicineRow(med = {}) {
   const list = document.getElementById('opd-med-list');
   const row = document.createElement('div');
   row.className = 'opd-med-row';
   row.innerHTML = `
-    <div><label>Medicine</label><input type="text" class="med-name" list="med-name-options" placeholder="e.g. Paracetamol 500mg" value="${escapeAttr(med.name)}" /></div>
-    <div><label>Dose</label><input type="text" class="med-dose" list="med-dose-options" placeholder="1 tablet" value="${escapeAttr(med.dose)}" /></div>
-    <div><label>Frequency</label><input type="text" class="med-frequency" list="med-frequency-options" placeholder="1-1-1" value="${escapeAttr(med.frequency)}" /></div>
-    <div><label>Duration</label><input type="text" class="med-duration" list="med-duration-options" placeholder="3 days" value="${escapeAttr(med.duration)}" /></div>
-    <div><label>Route</label><input type="text" class="med-route" list="med-route-options" placeholder="Oral" value="${escapeAttr(med.route)}" /></div>
-    <div><label>Instruction</label><input type="text" class="med-instruction" list="med-instruction-options" placeholder="After food" value="${escapeAttr(med.instruction)}" /></div>
+    <div><label>Medicine</label>${dropdownFieldHtml('med-name', MED_NAME_OPTIONS, med.name)}</div>
+    <div><label>Dose</label>${dropdownFieldHtml('med-dose', MED_DOSE_OPTIONS, med.dose)}</div>
+    <div><label>Frequency</label>${dropdownFieldHtml('med-frequency', MED_FREQUENCY_OPTIONS, med.frequency)}</div>
+    <div><label>Duration</label>${dropdownFieldHtml('med-duration', MED_DURATION_OPTIONS, med.duration)}</div>
+    <div><label>Route</label>${dropdownFieldHtml('med-route', MED_ROUTE_OPTIONS, med.route)}</div>
+    <div><label>Instruction</label>${dropdownFieldHtml('med-instruction', MED_INSTRUCTION_OPTIONS, med.instruction)}</div>
     <button type="button" class="opd-med-remove" title="Remove">✕</button>
   `;
+  ['med-name', 'med-dose', 'med-frequency', 'med-duration', 'med-route', 'med-instruction'].forEach(cls => bindOtherToggle(row, cls));
   row.querySelector('.opd-med-remove').addEventListener('click', () => row.remove());
   list.appendChild(row);
 }
 
 function collectMedicines() {
   return Array.from(document.getElementById('opd-med-list').querySelectorAll('.opd-med-row')).map(row => ({
-    name: row.querySelector('.med-name').value.trim(),
-    dose: row.querySelector('.med-dose').value.trim(),
-    frequency: row.querySelector('.med-frequency').value.trim(),
-    duration: row.querySelector('.med-duration').value.trim(),
-    route: row.querySelector('.med-route').value.trim(),
-    instruction: row.querySelector('.med-instruction').value.trim(),
+    name: fieldValue(row, 'med-name'),
+    dose: fieldValue(row, 'med-dose'),
+    frequency: fieldValue(row, 'med-frequency'),
+    duration: fieldValue(row, 'med-duration'),
+    route: fieldValue(row, 'med-route'),
+    instruction: fieldValue(row, 'med-instruction'),
   })).filter(m => m.name);
 }
 
@@ -205,6 +276,16 @@ function fillForm(rec) {
   document.getElementById('of-queue-entry-id').value = rec.queue_entry_id || '';
   document.getElementById('of-appointment-id').value = rec.appointment_id || '';
   document.getElementById('of-patient-id').value = rec.patient_id || '';
+  const idField = document.getElementById('of-patient-id-visible');
+  if (rec.patient_id) {
+    idField.disabled = true;
+    fetch(`${PAT_API}/${rec.patient_id}`).then(r => r.json()).then(d => {
+      if (d.patient?.patient_id) idField.value = d.patient.patient_id;
+    }).catch(() => {});
+  } else {
+    idField.value = '';
+    idField.disabled = false;
+  }
   document.getElementById('of-name').value = rec.patient_name || '';
   document.getElementById('of-mobile').value = rec.mobile || '';
   document.getElementById('of-age').value = rec.age || '';
@@ -239,6 +320,8 @@ function fillForm(rec) {
   try { invs = rec.investigations ? JSON.parse(rec.investigations) : []; } catch { invs = []; }
   if (invs.length) invs.forEach(i => addInvestigationRow(i));
   else addInvestigationRow();
+
+  refreshAllTextareaSizes();
 }
 
 // ─── Load & render list ────────────────────────────────
@@ -354,6 +437,16 @@ async function saveOpdRecord(payload) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patchBody),
     }).catch(e => console.error('[OPD] patient vitals sync failed', e));
+  }
+
+  // First-visit patients can have their Patient ID entered/corrected right here.
+  const idField = document.getElementById('of-patient-id-visible');
+  if (payload.patient_id && idField && !idField.disabled && idField.value.trim()) {
+    fetch(`${PAT_API}/${payload.patient_id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ patient_id: idField.value.trim() }),
+    }).catch(e => console.error('[OPD] patient ID sync failed', e));
   }
 
   return { id: id || data.id, ...payload };
@@ -501,11 +594,55 @@ function bindEvents() {
   document.querySelectorAll('#opd-form .opd-vital-box input').forEach(input => {
     input.addEventListener('input', () => input.classList.remove('autofilled'));
   });
+  bindAdviceBullets('of-advice');
+}
+
+// ─── Auto-bulleted Advice textarea ─────────────────────
+// Each Enter starts a new "- " bullet line automatically, so the doctor can just
+// type one point per line without manually adding the dash each time.
+function insertAtCursor(el, text) {
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  el.value = el.value.slice(0, start) + text + el.value.slice(end);
+  const pos = start + text.length;
+  el.selectionStart = el.selectionEnd = pos;
+}
+
+function bindAdviceBullets(id) {
+  const el = document.getElementById(id);
+  el.addEventListener('focus', () => {
+    if (!el.value) insertAtCursor(el, '- ');
+  });
+  el.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      insertAtCursor(el, '\n- ');
+    }
+  });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   resetForm();
   prefillFromQuery();
   bindEvents();
+  bindTextareaAutosize();
+  refreshAllTextareaSizes();
   loadRecords();
 });
+
+// ─── Auto-growing textareas ─────────────────────────────
+// Every textarea in the form grows with its content instead of scrolling internally.
+function autosizeTextarea(el) {
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight}px`;
+}
+
+function refreshAllTextareaSizes() {
+  document.querySelectorAll('textarea').forEach(autosizeTextarea);
+}
+
+function bindTextareaAutosize() {
+  document.addEventListener('input', e => {
+    if (e.target.tagName === 'TEXTAREA') autosizeTextarea(e.target);
+  });
+}

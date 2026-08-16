@@ -59,7 +59,6 @@ export const PATIENT_SCHEMA = `
     );
     CREATE INDEX IF NOT EXISTS idx_visits_patient_id ON patient_visits(patient_id);
     CREATE INDEX IF NOT EXISTS idx_visits_visit_date ON patient_visits(visit_date DESC);
-    CREATE INDEX IF NOT EXISTS idx_visits_queue_entry ON patient_visits(queue_entry_id);
 `;
 
 // ─── QUEUE SCHEMA (replaces both old definitions) ────────────

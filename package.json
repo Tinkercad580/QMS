@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-frontend.js",
+    "prestart": "npm run build",
     "start": "node dist/backend/server.js",
     "dev": "ts-node backend/server.ts"
   },
