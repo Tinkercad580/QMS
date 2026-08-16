@@ -1,6 +1,4 @@
 node_modules/
 dist/
 .env
-npm run build 
-
-npm start
+*.db
