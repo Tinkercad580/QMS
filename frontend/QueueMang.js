@@ -145,7 +145,7 @@ function startClock() {
 function shiftQueueDate(deltaDays) {
   const d = new Date(state.queueDate + 'T00:00:00');
   d.setDate(d.getDate() + deltaDays);
-  state.queueDate = d.toISOString().slice(0, 10);
+  state.queueDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   $('queue-date-input').value = state.queueDate;
   updateQueueDateNavUI();
   loadAll();
@@ -1467,6 +1467,8 @@ function fillOpdForm(rec) {
 async function loadOpdHistory(entry) {
   const panel = $('opd-history-panel');
   panel.innerHTML = '<span class="opd-hist-empty">Loading…</span>';
+  $('opd-hist-detail').innerHTML = '';
+  state.viewingHistRecord = null;
   try {
     let records = [];
     if (entry.patient_id) {
@@ -1483,6 +1485,8 @@ async function loadOpdHistory(entry) {
 
     if (!records.length) {
       panel.innerHTML = '<span class="opd-hist-empty">No previous records found.</span>';
+      $('opd-hist-detail').innerHTML = '';
+      state.viewingHistRecord = null;
       return records;
     }
     panel.innerHTML = records.map((r, idx) => `
@@ -1940,13 +1944,7 @@ async function handleHoldVisit() {
   const entry = state.queue.find(q => q.id === queueId);
   if (!entry) return;
 
-  const reason = prompt(
-    'Why is this patient being put on hold? (e.g. "Gone for X-Ray, back today with report")',
-    'Gone for investigation — will return today with report'
-  );
-  if (reason === null) return; // cancelled
-
-  const result = await queueAction(queueId, 'hold', { reason: reason.trim() || undefined });
+  const result = await queueAction(queueId, 'hold', { reason: 'Gone for investigation — will return today with report' });
   if (result?.success) {
     toast('success', `⏸ ${entry.patient_name} put on hold — will resume when back`);
     closeModal('opd-modal');
