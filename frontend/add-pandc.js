@@ -5,6 +5,19 @@
 const API_BASE   = '';
 const API        = `${API_BASE}/api/patients`;
 const VISITS_API = `${API_BASE}/api/visits`;
+const OPD_API    = `${API_BASE}/api/opd`;
+const DEFAULT_REFERRED_BY = 'Dr. Jayaraja Puthran';
+
+const CLINIC_INFO = {
+  name: 'Jai Ganesh Nursing Home',
+  sub: 'Medical, Surgical, Orthopaedic Trauma Centre',
+  regNo: 'Hosp. Reg. No. TMC / Zone - A / 579',
+  address: 'R.S.C. 15, Plot No. 67/68, Opp. Louis Bldg., Veer Savarkar Nagar, Thane (W) - 400 606.',
+  mobile: '9321467944',
+  doctorQualification: 'M.B.B.S., D. Ortho. (C.P.S. Bombay)',
+  doctorSpecialty: 'Bone Fracture Specialist · Trauma and Spine Specialist',
+  doctorRegNo: 'Reg. No. 77425',
+};
 
 const PAGE_SIZE = 20;
 
@@ -264,6 +277,10 @@ function bindEvents() {
   visitModal.addEventListener('click', e => { if (e.target === visitModal) closeVisitModal(); });
   visitForm.addEventListener('submit', handleVisitSubmit);
 
+  $('close-view-visit-modal').addEventListener('click', closeViewVisitModal);
+  $('close-view-visit-btn').addEventListener('click', closeViewVisitModal);
+  $('view-visit-modal').addEventListener('click', e => { if (e.target === $('view-visit-modal')) closeViewVisitModal(); });
+
   // Confirm dialog
   $('confirm-cancel').addEventListener('click', () => { confirmOverlay.classList.remove('open'); state.pendingDeleteId = null; });
   $('confirm-ok').addEventListener('click', async () => {
@@ -349,6 +366,7 @@ function closeModal() {
 function fillForm(p) {
   const fields = ['patient_id','full_name','mobile','alt_mobile','email','dob','age','gender',
     'blood_group','height_cm','weight_kg','allergies','chronic_conditions','current_medications',
+    'affected_area','mobility_status','injury_history','previous_surgeries',
     'address','city','pin_code','emergency_contact_name','emergency_contact_mobile',
     'emergency_contact_relation','visit_type','department','assigned_doctor',
     'insurance_policy','chief_complaint','notes'];
@@ -461,14 +479,14 @@ async function openDrawer(id) {
     ['Height', p.height_cm ? `${p.height_cm} cm` : null],
     ['Weight', p.weight_kg ? `${p.weight_kg} kg` : null],
     ['BMI', (p.height_cm && p.weight_kg) ? calcBMI(p.weight_kg, p.height_cm) : null],
+    ['Affected Side / Joint / Limb', p.affected_area],
+    ['Mobility Status', p.mobility_status],
     ['Allergies', p.allergies, true],
     ['Chronic Conditions', p.chronic_conditions, true],
     ['Current Medications', p.current_medications, true],
-    ['Chief Complaint', p.chief_complaint, true],
-    ['Department', p.department],
+    ['Fracture / Injury History', p.injury_history, true],
+    ['Previous Surgeries / Implants', p.previous_surgeries, true],
     ['Referred by', p.assigned_doctor],
-    ['Visit Type', p.visit_type],
-    ['Insurance', p.insurance_policy],
     ['Notes', p.notes, true],
   ]);
 
@@ -525,16 +543,20 @@ async function loadVisits(patientId) {
 }
 
 function renderVisits(visits) {
+  state.visits = visits;
   $('visits-count').textContent = `${visits.length} visit${visits.length !== 1 ? 's' : ''}`;
   if (!visits.length) {
     $('visit-timeline').innerHTML = `<div class="empty-visits">No visits recorded yet.</div>`;
     return;
   }
   $('visit-timeline').innerHTML = visits.map(v => `
-    <div class="visit-card">
+    <div class="visit-card" onclick="viewVisit(${v.id})" style="cursor:pointer">
       <div class="visit-card-header">
         <span class="visit-date">${fmtDateTime(v.visit_date)}</span>
-        <span class="visit-type-badge">${v.visit_type || 'Visit'}</span>
+        <div class="visit-card-badges">
+          <span class="visit-type-badge">${v.visit_type || 'Visit'}</span>
+          <button type="button" class="visit-print-btn" onclick="event.stopPropagation(); viewVisit(${v.id})">👁 View</button>
+        </div>
       </div>
       ${v.doctor ? `<div class="visit-doctor">👨‍⚕️ ${esc(v.doctor)}</div>` : ''}
       ${v.complaint ? `<div class="visit-complaint"><strong>Complaint:</strong> ${esc(v.complaint)}</div>` : ''}
@@ -549,6 +571,162 @@ function renderVisits(visits) {
       ) : ''}
     </div>
   `).join('');
+}
+
+function visitRows(v) {
+  return [
+    ['Visit Type', v.visit_type || 'Visit'],
+    ['Doctor', v.doctor],
+    ['Complaint', v.complaint],
+    ['Diagnosis / Notes', v.diagnosis],
+    ['Prescription', v.prescription],
+    ['Follow-up', v.follow_up_date ? fmtDate(v.follow_up_date) : null],
+    ['Notes', v.notes],
+  ].filter(([, val]) => val);
+}
+
+// Prescription text is written by medicinesToText() (QueueMang.js) as blocks
+// separated by a blank line: "Name\nDose | Frequency | Duration\nInstruction".
+// Parse that back into one table row per medicine, matching the OPD print table.
+function parseMedicineBlocks(val) {
+  return val.split(/\n\s*\n/).map(block => block.trim()).filter(Boolean).map(block => {
+    const [name = '', doseLine = '', instruction = ''] = block.split('\n').map(l => l.trim());
+    const [dose = '', frequency = '', duration = ''] = doseLine.split('|').map(s => s.trim());
+    return { name, dose, frequency, duration, instruction };
+  });
+}
+
+// Prescription/Investigation-style fields render as a table to match the
+// tabular medicine/investigation format used on the OPD print — everything
+// else stays as plain text.
+function sectionBody(label, val) {
+  if (label !== 'Prescription') return `<p>${esc(val)}</p>`;
+  const meds = parseMedicineBlocks(val);
+  return `<table class="rx-med-table">
+    <thead><tr><th>Medicine</th><th>Dose</th><th>Frequency</th><th>Duration</th><th>Instruction</th></tr></thead>
+    <tbody>${meds.map(m => `
+      <tr><td>${esc(m.name)}</td><td>${esc(m.dose)}</td><td>${esc(m.frequency)}</td><td>${esc(m.duration)}</td><td>${esc(m.instruction)}</td></tr>
+    `).join('')}</tbody>
+  </table>`;
+}
+
+function clinicHeaderHtml(doctorName) {
+  return `
+    <div class="rx-header">
+      <div>
+        <p class="rx-clinic-name">${CLINIC_INFO.name}</p>
+        <p class="rx-clinic-sub">${CLINIC_INFO.sub}</p>
+        <p class="rx-clinic-address">${CLINIC_INFO.address}</p>
+        <p class="rx-clinic-address">${CLINIC_INFO.regNo} &nbsp;|&nbsp; Mob: ${CLINIC_INFO.mobile}</p>
+      </div>
+      <div class="rx-doctor">
+        <p class="rx-doctor-name">${esc(doctorName || DEFAULT_REFERRED_BY)}</p>
+        <p class="rx-clinic-address">${CLINIC_INFO.doctorQualification}</p>
+        <p class="rx-clinic-address">${CLINIC_INFO.doctorSpecialty}</p>
+        <p class="rx-clinic-address">${CLINIC_INFO.doctorRegNo}</p>
+      </div>
+    </div>`;
+}
+
+// Basic fallback view — used when this visit has no linked OPD record (e.g.
+// manually logged via "+ Log Visit" rather than completed through the queue).
+function visitRecordHtml(v, p) {
+  const rows = visitRows(v);
+  return `
+    ${clinicHeaderHtml(v.doctor)}
+    <div class="rx-patient-strip">
+      <div><b>Patient</b>${esc(p.full_name)}</div>
+      <div><b>Patient ID</b>${esc(p.patient_id || `#${p.id}`)}</div>
+      <div><b>Mobile</b>${esc(p.mobile || '—')}</div>
+      <div><b>Age / Gender</b>${p.age ? `${p.age}Y ${p.gender || ''}`.trim() : '—'}</div>
+    </div>
+    <h3 style="margin:0 0 4px;">Visit Record — ${fmtDateTime(v.visit_date)}</h3>
+    ${rows.map(([label, val]) => `<div class="rx-section"><h4>${label}</h4>${sectionBody(label, val)}</div>`).join('')}
+  `;
+}
+
+// Full record view — used when this visit was completed through the queue and
+// has a linked opd_records entry, so every field from the doctor's actual OPD
+// record (vitals, structured medicines w/ route, investigations, advice) shows.
+function fullOpdRecordHtml(rec, p) {
+  let vitals = {};
+  try { vitals = rec.vitals ? JSON.parse(rec.vitals) : {}; } catch { vitals = {}; }
+  let medicines = [];
+  try { medicines = rec.medicines ? JSON.parse(rec.medicines) : []; } catch { medicines = []; }
+  let investigations = [];
+  try { investigations = rec.investigations ? JSON.parse(rec.investigations) : []; } catch { investigations = []; }
+
+  const age = p.age ? `${p.age}Y ${p.gender || ''}`.trim() : '—';
+  const opdNo = rec.id ? `OPD-${rec.id}` : '—';
+
+  const medsHtml = medicines.length
+    ? `<table class="rx-med-table">
+        <thead><tr><th>Medicine</th><th>Dose</th><th>Frequency</th><th>Duration</th><th>Route</th><th>Instruction</th></tr></thead>
+        <tbody>${medicines.map(m => `
+          <tr><td>${esc(m.name)}</td><td>${esc(m.dose)}</td><td>${esc(m.frequency)}</td><td>${esc(m.duration)}</td><td>${esc(m.route)}</td><td>${esc(m.instruction)}</td></tr>
+        `).join('')}</tbody>
+      </table>`
+    : '<p class="rx-empty">No medicines prescribed.</p>';
+
+  const investHtml = investigations.length
+    ? `<table class="rx-med-table">
+        <thead><tr><th>Investigation</th><th>Detail / Area</th><th>Instruction</th><th>Report Comment</th></tr></thead>
+        <tbody>${investigations.map(i => `
+          <tr><td>${esc(i.type)}</td><td>${esc(i.detail)}</td><td>${esc(i.instruction)}</td><td>${esc(i.comment)}</td></tr>
+        `).join('')}</tbody>
+      </table>`
+    : '<p class="rx-empty">No investigations advised.</p>';
+
+  return `
+    ${clinicHeaderHtml(rec.doctor_name)}
+    <div class="rx-patient-strip">
+      <div><b>Patient Name</b>${esc(rec.patient_name || p.full_name)}</div>
+      <div><b>Age / Gender</b>${age}</div>
+      <div><b>Date</b>${esc(rec.visit_date)}</div>
+      <div><b>OPD No.</b>${opdNo}</div>
+    </div>
+    ${(vitals.bp || vitals.pulse || vitals.weight || vitals.height) ? `
+    <div class="rx-patient-strip">
+      ${vitals.bp ? `<div><b>BP</b>${esc(vitals.bp)} mmHg</div>` : ''}
+      ${vitals.pulse ? `<div><b>Pulse</b>${esc(vitals.pulse)} bpm</div>` : ''}
+      ${vitals.weight ? `<div><b>Weight</b>${esc(vitals.weight)} kg</div>` : ''}
+      ${vitals.height ? `<div><b>Height</b>${esc(vitals.height)} cm</div>` : ''}
+    </div>` : ''}
+    <div class="rx-section"><h4>Diagnosis</h4><p>${esc(rec.diagnosis) || '—'}</p></div>
+    <div class="rx-section"><h4>Prescription / Medicines</h4>${medsHtml}</div>
+    <div class="rx-section"><h4>Investigations Advised</h4>${investHtml}</div>
+    <div class="rx-section"><h4>Advice</h4><p>${esc(rec.advice) || '—'}</p></div>
+    <div class="rx-section"><h4>Follow-up Date</h4><p>${esc(rec.follow_up_date) || '—'}</p></div>
+  `;
+}
+
+// Opens an on-screen modal with the full visit details. If this visit was
+// completed through the queue, pull the linked opd_records entry so every
+// field the doctor recorded (vitals, structured meds, investigations, advice)
+// shows — not just the summary fields stored on patient_visits.
+async function viewVisit(id) {
+  const v = (state.visits || []).find(x => x.id === id);
+  const p = state.activeDrawerPatient;
+  if (!v || !p) return;
+
+  state.viewingVisit = v;
+  $('view-visit-body').innerHTML = '<p style="padding:12px 0;color:var(--text-faint)">Loading…</p>';
+  $('view-visit-modal').classList.add('open');
+
+  let opdRecord = null;
+  if (v.queue_entry_id) {
+    try {
+      const res = await fetch(`${OPD_API}?queue_entry_id=${v.queue_entry_id}`);
+      const data = await res.json();
+      opdRecord = (data.records || [])[0] || null;
+    } catch (e) { console.error('[View Visit] OPD record load failed', e); }
+  }
+
+  $('view-visit-body').innerHTML = opdRecord ? fullOpdRecordHtml(opdRecord, p) : visitRecordHtml(v, p);
+}
+function closeViewVisitModal() {
+  $('view-visit-modal').classList.remove('open');
+  state.viewingVisit = null;
 }
 
 // ─── VISIT MODAL ───────────────────────────────────────

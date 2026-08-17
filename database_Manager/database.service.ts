@@ -167,6 +167,19 @@ class DynamicDatabaseService {
           }
         });
       }
+
+      const patientsExists = this.db.prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='patients'`
+      ).get();
+      if (patientsExists) {
+        const patientCols = this.db.prepare(`PRAGMA table_info(patients)`).all() as any[];
+        ['affected_area', 'injury_history', 'previous_surgeries', 'mobility_status'].forEach(col => {
+          if (!patientCols.some(c => c.name === col)) {
+            this.db.exec(`ALTER TABLE patients ADD COLUMN ${col} TEXT`);
+            console.log(`✅ ${this.dbName}: Migration applied — ${col} added to patients`);
+          }
+        });
+      }
     } catch (error: any) {
       console.error(`❌ ${this.dbName}: Migration failed:`, error.message);
     }

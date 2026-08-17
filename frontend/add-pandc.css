@@ -417,6 +417,27 @@ ul { list-style: none; }
 .bio-field-value { font-size: 13px; color: var(--text); font-weight: 500; word-break: break-word; }
 .bio-field-value.empty { color: var(--text-faint); font-style: italic; font-weight: 400; }
 .bio-field.wide { grid-column: 1 / -1; }
+#view-visit-body { padding: 4px 20px 0; }
+#view-visit-body .rx-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #2563EB; padding-bottom: 12px; margin-bottom: 16px; }
+#view-visit-body .rx-clinic-name { font-size: 18px; font-weight: 800; color: #dc2626; margin: 0; }
+#view-visit-body .rx-clinic-sub { font-size: 12px; color: #475569; margin: 2px 0; }
+#view-visit-body .rx-clinic-address { font-size: 11px; color: #64748b; margin: 2px 0; }
+#view-visit-body .rx-patient-strip { display: flex; flex-wrap: wrap; gap: 18px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 13px; }
+#view-visit-body .rx-patient-strip b { display: block; font-size: 10px; text-transform: uppercase; color: var(--text-faint); }
+#view-visit-body .rx-section { margin-bottom: 14px; }
+#view-visit-body .rx-section h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--primary); margin: 0 0 4px; border-bottom: 1px dashed var(--border); padding-bottom: 3px; }
+#view-visit-body .rx-section p { font-size: 13.5px; margin: 0; white-space: pre-wrap; color: var(--text); }
+#view-visit-body .rx-med-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+#view-visit-body .rx-med-table th, #view-visit-body .rx-med-table td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; color: var(--text); }
+#view-visit-body .rx-med-table th { background: var(--surface-2); }
+#view-visit-body .rx-doctor { text-align: right; font-size: 13px; }
+#view-visit-body .rx-doctor-name { font-weight: 700; font-size: 15px; margin: 0; color: var(--text); }
+#view-visit-body .rx-empty { font-size: 12.5px; color: var(--text-faint); font-style: italic; margin: 0; }
+
+.view-visit-footer {
+  display: flex; justify-content: flex-end;
+  padding: 14px 20px; border-top: 1px solid var(--border);
+}
 
 /* Visit Timeline */
 .visits-header {
@@ -430,7 +451,15 @@ ul { list-style: none; }
   border-radius: var(--radius); padding: 12px;
   animation: rowSlide 0.2s ease;
 }
-.visit-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.visit-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 8px; }
+.visit-card-badges { display: flex; align-items: center; gap: 8px; }
+.visit-print-btn {
+  font-size: 11px; font-weight: 600; color: var(--primary);
+  background: var(--primary-light); border: 1px solid transparent;
+  border-radius: var(--radius-sm); padding: 3px 8px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.visit-print-btn:hover { border-color: var(--primary); }
 .visit-date { font-size: 11px; font-weight: 700; color: var(--primary); font-family: var(--font-mono); }
 .visit-type-badge {
   font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;

@@ -72,6 +72,10 @@ router.post('/', (req: Request, res: Response) => {
             assigned_doctor: body.assigned_doctor?.trim() || null,
             insurance_policy: body.insurance_policy?.trim() || null,
             chief_complaint: body.chief_complaint?.trim() || null,
+            affected_area: body.affected_area?.trim() || null,
+            injury_history: body.injury_history?.trim() || null,
+            previous_surgeries: body.previous_surgeries?.trim() || null,
+            mobility_status: body.mobility_status || null,
             notes: body.notes?.trim() || null,
             created_at: now,
             updated_at: now,
@@ -180,6 +184,7 @@ router.put('/:id', (req: Request, res: Response) => {
             'address', 'city', 'pin_code', 'emergency_contact_name', 'emergency_contact_mobile',
             'emergency_contact_relation', 'visit_type', 'department', 'assigned_doctor',
             'insurance_policy', 'chief_complaint', 'notes', 'patient_id',
+            'affected_area', 'injury_history', 'previous_surgeries', 'mobility_status',
         ];
         editable.forEach(f => {
             if (body[f] !== undefined) updates[f] = body[f] === '' ? null : body[f];

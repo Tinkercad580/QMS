@@ -1466,6 +1466,8 @@ function fillOpdForm(rec) {
 
 async function loadOpdHistory(entry) {
   const panel = $('opd-history-panel');
+  const leftCol = $('opd-col-left');
+  leftCol.classList.add('hidden');
   panel.innerHTML = '<span class="opd-hist-empty">Loading…</span>';
   $('opd-hist-detail').innerHTML = '';
   state.viewingHistRecord = null;
@@ -1487,8 +1489,10 @@ async function loadOpdHistory(entry) {
       panel.innerHTML = '<span class="opd-hist-empty">No previous records found.</span>';
       $('opd-hist-detail').innerHTML = '';
       state.viewingHistRecord = null;
+      leftCol.classList.add('hidden');
       return records;
     }
+    leftCol.classList.remove('hidden');
     panel.innerHTML = records.map((r, idx) => `
       <div class="opd-hist-item" data-id="${r.id}">
         <span>${idx === 0 ? 'Latest Visit' : 'Visit'}</span>
@@ -1509,8 +1513,10 @@ async function loadOpdHistory(entry) {
     if (firstItem) firstItem.classList.add('active');
     return records;
   } catch (e) {
+    console.error('[OPD] history load failed', e);
     panel.innerHTML = '<span class="opd-hist-empty">Failed to load history.</span>';
     $('opd-hist-detail').innerHTML = '';
+    leftCol.classList.add('hidden');
     return [];
   }
 }
