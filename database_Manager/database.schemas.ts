@@ -164,6 +164,22 @@ export const OPD_SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_opd_patient      ON opd_records(patient_id);
   CREATE INDEX IF NOT EXISTS idx_opd_queue_entry   ON opd_records(queue_entry_id);
   CREATE INDEX IF NOT EXISTS idx_opd_visit_date    ON opd_records(visit_date DESC);
+
+  -- Custom investigation/medicine field values typed in by hand get remembered
+  -- here so they show up as a suggestion for every patient afterwards.
+  -- 'context' scopes a value to another field's value (e.g. investigation_detail
+  -- values are scoped to the investigation type they were entered under —
+  -- X-Ray → "Right Knee" shouldn't suggest itself under CBC); '' means global.
+  -- (Empty string, not NULL, so the UNIQUE constraint actually dedupes global rows —
+  -- SQLite treats every NULL as distinct from every other NULL.)
+  CREATE TABLE IF NOT EXISTS custom_options (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    category    TEXT NOT NULL,
+    context     TEXT NOT NULL DEFAULT '' COLLATE NOCASE,
+    value       TEXT NOT NULL COLLATE NOCASE,
+    created_at  TEXT NOT NULL,
+    UNIQUE(category, context, value)
+  );
 `;
 
 // ─── TENANT SCHEMA ────────────────────────────────────────────

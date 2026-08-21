@@ -28,8 +28,10 @@ const MED_NAME_OPTIONS = [
   'Etoricoxib 90mg', 'Tramadol 50mg', 'Calcium + Vitamin D3', 'Methylcobalamin',
   'Pantoprazole 40mg', 'Chymoral Forte',
 ];
+// Ortho prescriptions are dosed by tablet/capsule/injection count (strength is
+// already in the medicine name, e.g. "Paracetamol 500mg") — no liquid/ml doses.
 const MED_DOSE_OPTIONS = [
-  '1 tablet', '2 tablets', '1 capsule', '5 ml', '10 ml', '1 tsp', '1 injection', 'Apply locally', '1 drop', '2 drops',
+  '1 tablet', '2 tablets', '1 capsule', '1 injection', 'Apply locally', '1 drop', '2 drops',
 ];
 const MED_FREQUENCY_OPTIONS = [
   '1-0-0', '0-1-0', '0-0-1', '1-1-1', '1-0-1', '1-1-0', '0-1-1',
@@ -46,11 +48,58 @@ const MED_INSTRUCTION_OPTIONS = [
 ];
 
 // Common investigations for an Ortho / Bone Fracture / Trauma & Spine practice, plus general labs.
+// X-Ray and CBC lead the list since they're the most frequently ordered — everything
+// else is a searchable suggestion via the datalist, and typing anything not listed
+// here is saved (via /api/opd/options) so it shows up as a suggestion for the next patient too.
 const INVESTIGATION_OPTIONS = [
-  'X-Ray', 'MRI', 'CT Scan', 'Bone Density (DEXA)', 'Ultrasound',
-  'CBC', 'Blood Sugar (Fasting/PP)', 'HbA1c', 'ESR/CRP', 'Serum Calcium', 'Vitamin D',
-  'ECG', 'Other',
+  'X-Ray', 'CBC', 'MRI', 'CT Scan', 'Bone Density (DEXA)', 'Ultrasound',
+  'Blood Sugar (Fasting/PP)', 'HbA1c', 'ESR/CRP', 'Serum Calcium', 'Vitamin D', 'ECG',
 ];
+
+// What "Detail / Area" actually means depends on which investigation was picked —
+// an X-Ray/MRI/CT needs a body part, a blood test needs a sample condition, etc.
+// Matches the real workload of an Ortho / Bone Fracture / Trauma & Spine practice.
+// Anything the doctor needs beyond this list can still be typed in manually.
+const INVESTIGATION_DETAIL_OPTIONS = {
+  'X-Ray': [
+    'Right Knee', 'Left Knee', 'Both Knees', 'Right Knee (Weight-bearing)', 'Left Knee (Weight-bearing)',
+    'Right Shoulder', 'Left Shoulder', 'Right Hip', 'Left Hip', 'Pelvis with Both Hips',
+    'Right Ankle', 'Left Ankle', 'Right Foot', 'Left Foot', 'Right Wrist', 'Left Wrist',
+    'Right Elbow', 'Left Elbow', 'Right Hand', 'Left Hand', 'Right Forearm', 'Left Forearm',
+    'Right Leg (Tibia-Fibula)', 'Left Leg (Tibia-Fibula)', 'Right Femur', 'Left Femur',
+    'Cervical Spine', 'Dorsal (Thoracic) Spine', 'Lumbosacral Spine', 'Whole Spine (Scoliosis Series)', 'Chest',
+  ],
+  'MRI': [
+    'Right Knee (without contrast)', 'Left Knee (without contrast)', 'Right Shoulder', 'Left Shoulder',
+    'Right Hip', 'Left Hip', 'Right Ankle', 'Left Ankle', 'Right Wrist', 'Left Wrist',
+    'Cervical Spine', 'Dorsal Spine', 'Lumbosacral Spine (LS Spine, Screening)',
+  ],
+  'CT Scan': [
+    'Right Knee', 'Left Knee', 'Right Hip', 'Left Hip', 'Pelvis',
+    'Right Ankle (3D Reconstruction)', 'Left Ankle (3D Reconstruction)',
+    'Right Wrist (Scaphoid View)', 'Left Wrist (Scaphoid View)',
+    'Cervical Spine', 'Lumbosacral Spine', 'Whole Spine (3D Reconstruction)',
+  ],
+  'Bone Density (DEXA)': ['Lumbar Spine + Hip (Standard)', 'Forearm', 'Whole Body'],
+  'Ultrasound': [
+    'Right Shoulder (Rotator Cuff)', 'Left Shoulder (Rotator Cuff)', 'Right Knee', 'Left Knee',
+    'Soft Tissue Swelling', 'Doppler — Lower Limb (DVT Screening)',
+  ],
+  'CBC': ['Fasting Sample', 'Random Sample'],
+  'Blood Sugar (Fasting/PP)': ['Fasting', 'Post-Prandial (PP)', 'Random'],
+  'HbA1c': ['Fasting Sample'],
+  'ESR/CRP': ['Fasting Sample', 'Random Sample'],
+  'Serum Calcium': ['Fasting Sample'],
+  'Vitamin D': ['Fasting Sample'],
+  'ECG': ['Resting ECG', 'Pre-operative ECG'],
+};
+
+// Generic starting suggestions for the Instruction field — also scoped per
+// investigation type (same combination idea as Detail/Area), grows from there.
+const INVESTIGATION_INSTRUCTION_OPTIONS = {
+  'X-Ray': ['Get done before next visit', 'Weight-bearing view required'],
+  'MRI': ['Get done before next visit', 'Only if X-ray shows severe changes'],
+};
 
 const today = () => {
   const d = new Date();
@@ -79,6 +128,17 @@ let state = {
   pendingConfirm: null,
   autoRefreshTimer: null,
   autoCallNext: false,
+  investigationOptions: [...INVESTIGATION_OPTIONS],
+  medicineOptions: [...MED_NAME_OPTIONS],
+  medDoseOptions: [...MED_DOSE_OPTIONS],
+  medFrequencyOptions: [...MED_FREQUENCY_OPTIONS],
+  medDurationOptions: [...MED_DURATION_OPTIONS],
+  medRouteOptions: [...MED_ROUTE_OPTIONS],
+  medInstructionOptions: [...MED_INSTRUCTION_OPTIONS],
+  // Keyed by investigation type, e.g. { 'X-Ray': ['Right Knee', ...] } — cloned
+  // per-array so growing one doesn't mutate the shared defaults constant.
+  investigationDetailOptions: Object.fromEntries(Object.entries(INVESTIGATION_DETAIL_OPTIONS).map(([k, v]) => [k, [...v]])),
+  investigationInstructionOptions: Object.fromEntries(Object.entries(INVESTIGATION_INSTRUCTION_OPTIONS).map(([k, v]) => [k, [...v]])),
 };
 
 
@@ -91,9 +151,161 @@ document.addEventListener('DOMContentLoaded', () => {
   loadAll();
   bindEvents();
   bindTextareaAutosize();
+  loadCustomOptions();
   // Auto-refresh every 30 seconds
   state.autoRefreshTimer = setInterval(() => loadAll(true), 30000);
 });
+
+// ─── Custom Investigation / Medicine options ────────────
+// Anything typed in that isn't on the built-in list gets remembered server-side
+// (see /api/opd/options) so it shows up as a dropdown suggestion for the next patient too.
+// Flat (global) categories → the state array each one grows.
+const FLAT_OPTION_CATEGORIES = {
+  investigation: 'investigationOptions',
+  medicine: 'medicineOptions',
+  medicine_dose: 'medDoseOptions',
+  medicine_frequency: 'medFrequencyOptions',
+  medicine_duration: 'medDurationOptions',
+  medicine_route: 'medRouteOptions',
+  medicine_instruction: 'medInstructionOptions',
+};
+// Context-scoped categories (value depends on the investigation type it was
+// entered under) → the state map each one grows.
+const CONTEXT_OPTION_CATEGORIES = {
+  investigation_detail: 'investigationDetailOptions',
+  investigation_instruction: 'investigationInstructionOptions',
+};
+
+async function loadCustomOptions() {
+  try {
+    const flatEntries = Object.entries(FLAT_OPTION_CATEGORIES);
+    const flatResults = await Promise.all(flatEntries.map(([cat]) => fetch(`${OPD_API}/options/${cat}`).then(r => r.json())));
+    flatResults.forEach((data, idx) => {
+      const stateKey = flatEntries[idx][1];
+      (data.values || []).forEach(v => addOptionIfNew(stateKey, v));
+    });
+
+    const contextEntries = Object.entries(CONTEXT_OPTION_CATEGORIES);
+    const contextResults = await Promise.all(contextEntries.map(([cat]) => fetch(`${OPD_API}/options/${cat}/by-context`).then(r => r.json())));
+    contextResults.forEach((data, idx) => {
+      const stateKey = contextEntries[idx][1];
+      Object.entries(data.grouped || {}).forEach(([ctx, values]) => {
+        values.forEach(v => addContextOptionIfNew(stateKey, ctx, v));
+      });
+    });
+  } catch (e) { console.error('[Options] load failed', e); }
+}
+
+function addOptionIfNew(stateKey, value) {
+  if (!value) return;
+  const exists = state[stateKey].some(o => o.toLowerCase() === value.toLowerCase());
+  if (!exists) state[stateKey].push(value);
+}
+
+function addContextOptionIfNew(stateKey, context, value) {
+  if (!value || !context) return;
+  const map = state[stateKey];
+  if (!map[context]) map[context] = [];
+  const exists = map[context].some(o => o.toLowerCase() === value.toLowerCase());
+  if (!exists) map[context].push(value);
+}
+
+function saveCustomOption(category, value, context) {
+  fetch(`${OPD_API}/options`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category, value, context }),
+  }).catch(e => console.error('[Options] save failed', e));
+}
+
+// Called after an OPD/investigation save — remembers every newly typed
+// medicine/investigation field value so future patients see it as a suggestion.
+function syncCustomOptions(medicines = [], investigations = []) {
+  const flatFieldToCategory = {
+    name: 'medicine', dose: 'medicine_dose', frequency: 'medicine_frequency',
+    duration: 'medicine_duration', route: 'medicine_route', instruction: 'medicine_instruction',
+  };
+  medicines.forEach(m => {
+    Object.entries(flatFieldToCategory).forEach(([field, category]) => {
+      const value = m[field];
+      const stateKey = FLAT_OPTION_CATEGORIES[category];
+      if (value && !state[stateKey].some(o => o.toLowerCase() === value.toLowerCase())) {
+        state[stateKey].push(value);
+        saveCustomOption(category, value);
+      }
+    });
+  });
+
+  investigations.forEach(i => {
+    if (i.type && !state.investigationOptions.some(o => o.toLowerCase() === i.type.toLowerCase())) {
+      state.investigationOptions.push(i.type);
+      saveCustomOption('investigation', i.type);
+    }
+    // Detail/Instruction are remembered as a pair with the investigation type
+    // they were entered under (X-Ray → "Right Knee"), not as a flat global list.
+    if (i.type && i.detail) addContextOptionIfNew('investigationDetailOptions', i.type, i.detail);
+    if (i.type && i.detail && !(INVESTIGATION_DETAIL_OPTIONS[i.type] || []).some(o => o.toLowerCase() === i.detail.toLowerCase())) {
+      saveCustomOption('investigation_detail', i.detail, i.type);
+    }
+    if (i.type && i.instruction) addContextOptionIfNew('investigationInstructionOptions', i.type, i.instruction);
+    if (i.type && i.instruction && !(INVESTIGATION_INSTRUCTION_OPTIONS[i.type] || []).some(o => o.toLowerCase() === i.instruction.toLowerCase())) {
+      saveCustomOption('investigation_instruction', i.instruction, i.type);
+    }
+  });
+}
+
+// ─── Searchable combobox ─────────────────────────────────
+// A real dropdown (click to open, type to filter, click a row to pick) instead
+// of the browser's plain native <datalist> suggestion popup — while still
+// letting the doctor type any value that isn't on the list.
+let comboCloseHandlerBound = false;
+function initCombobox(input, getOptions) {
+  const wrap = input.closest('.combo-wrap');
+  const panel = wrap.querySelector('.combo-panel');
+
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'combo-clear';
+  clearBtn.textContent = '✕';
+  clearBtn.title = 'Clear';
+  clearBtn.addEventListener('mousedown', e => {
+    e.preventDefault(); // don't steal focus from the input before we clear it
+    input.value = '';
+    input.focus();
+    render();
+  });
+  input.insertAdjacentElement('afterend', clearBtn);
+
+  const render = () => {
+    const q = input.value.trim().toLowerCase();
+    const options = getOptions().filter(o => !q || o.toLowerCase().includes(q));
+    if (!options.length) {
+      panel.innerHTML = '<div class="combo-empty">No matches — keep typing to add a new one</div>';
+    } else {
+      panel.innerHTML = options.map(o => `<div class="combo-option">${escapeAttr(o)}</div>`).join('');
+    }
+    panel.querySelectorAll('.combo-option').forEach(el => {
+      el.addEventListener('mousedown', e => {
+        e.preventDefault(); // keep focus so the click registers before blur closes the panel
+        input.value = el.textContent;
+        closeCombo();
+      });
+    });
+  };
+  const openCombo = () => { render(); panel.classList.add('open'); };
+  const closeCombo = () => panel.classList.remove('open');
+
+  input.addEventListener('focus', openCombo);
+  input.addEventListener('input', openCombo);
+  input.addEventListener('blur', () => setTimeout(closeCombo, 120));
+
+  // One delegated escape-key handler for all comboboxes, bound once.
+  if (!comboCloseHandlerBound) {
+    comboCloseHandlerBound = true;
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') document.querySelectorAll('.combo-panel.open').forEach(p => p.classList.remove('open'));
+    });
+  }
+}
 
 // ─── Auto-growing textareas ─────────────────────────────
 // Every textarea grows with its content up to a cap, then scrolls internally —
@@ -766,7 +978,22 @@ function bindEvents() {
  // Queue list actions (delegated)
   $('queue-list').addEventListener('click', e => {
     const btn = e.target.closest('[data-action]');
-    if (!btn) return;
+    if (!btn) {
+      // Clicking anywhere on the card (not a button) does the same thing as
+      // its primary action button — call/open the record without having to
+      // aim for the small icon buttons.
+      const card = e.target.closest('.queue-card');
+      if (!card) return;
+      const id = parseInt(card.dataset.id);
+      const entry = state.queue.find(q => q.id === id);
+      if (!entry) return;
+      if (entry.status === 'WAITING') callPatient(id);
+      else if (entry.status === 'CALLED' || entry.status === 'SERVING') { state.autoCallNext = true; openOpdModal(entry); }
+      else if (entry.status === 'HOLD') openInvestModal(entry);
+      else if (entry.status === 'MISSED') queueAction(id, 'requeue').then(() => toast('info', 'Re-queued at end'));
+      else if (entry.status === 'DONE' || entry.status === 'NOSHOW') { state.autoCallNext = false; openServeModal(id); }
+      return;
+    }
     e.stopPropagation();
     const id = parseInt(btn.dataset.id);
     const act = btn.dataset.action;
@@ -1071,7 +1298,7 @@ async function openInvestModal(entry) {
     }
   } catch (e) { console.error('[Investigations] load failed', e); }
 
-  if (!$('invest-quick-list').children.length) addInvestigationRow('invest-quick-list', {}, { showComment: false });
+  if (!$('invest-quick-list').children.length) addDefaultInvestigationRows('invest-quick-list', { showComment: false });
 }
 
 async function handleInvestSave() {
@@ -1101,6 +1328,7 @@ async function handleInvestSave() {
     if (!data.success) throw new Error(data.message);
     if (!recordId) $('iv-record-id').value = data.id;
     state.investOriginal = investigations;
+    syncCustomOptions([], investigations);
 
     // If the full OPD form for this same visit is open behind this popup, reflect
     // the just-saved investigations into it immediately — no reload/reopen needed.
@@ -1219,7 +1447,7 @@ async function openOpdModal(entry) {
   clearMedicineRows();
   addMedicineRow();
   clearInvestigationRows('opd-invest-list');
-  addInvestigationRow('opd-invest-list');
+  addDefaultInvestigationRows('opd-invest-list');
   $('opd-modal-sub').textContent = `History & prescription for ${entry.patient_name}`;
   $('opd-newvisit-date').textContent = state.queueDate || today();
   $('opd-modal').classList.add('open');
@@ -1296,35 +1524,16 @@ function clearMedicineRows() {
   $('opd-med-list').innerHTML = '';
 }
 
-// Builds a <select> dropdown + a hidden "Other" text fallback for a field whose
-// value might not be on the fixed picklist.
-function dropdownFieldHtml(cls, options, value) {
-  const isOther = value && !options.includes(value);
-  const opts = options.map(o => `<option value="${escapeAttr(o)}" ${value === o ? 'selected' : ''}>${o}</option>`).join('');
+// A combobox field for a fixed picklist (dose, frequency, duration, route,
+// instruction, …) — same styled dropdown as Medicine/Investigation, and typing
+// anything not on the list is still accepted as a one-off custom value.
+function comboFieldHtml(cls, value) {
   return `
-    <select class="${cls}">
-      <option value="">Select…</option>
-      ${opts}
-      <option value="__other__" ${isOther ? 'selected' : ''}>Other (type manually)</option>
-    </select>
-    <input type="text" class="${cls}-other" placeholder="Type custom value" value="${isOther ? escapeAttr(value) : ''}"
-      style="margin-top:4px; ${isOther ? '' : 'display:none;'}" />
+    <div class="combo-wrap">
+      <input type="text" class="${cls}" placeholder="Type or select…" autocomplete="off" value="${escapeAttr(value)}" />
+      <div class="combo-panel"></div>
+    </div>
   `;
-}
-
-function bindOtherToggle(row, cls) {
-  const select = row.querySelector(`.${cls}`);
-  const other = row.querySelector(`.${cls}-other`);
-  select.addEventListener('change', () => {
-    other.style.display = select.value === '__other__' ? '' : 'none';
-    if (select.value === '__other__') other.focus();
-  });
-}
-
-function fieldValue(row, cls) {
-  const select = row.querySelector(`.${cls}`);
-  if (select.value === '__other__') return row.querySelector(`.${cls}-other`).value.trim();
-  return select.value;
 }
 
 function addMedicineRow(med = {}) {
@@ -1332,15 +1541,20 @@ function addMedicineRow(med = {}) {
   const row = document.createElement('div');
   row.className = 'opd-med-row';
   row.innerHTML = `
-    <div><label>Medicine</label>${dropdownFieldHtml('med-name', MED_NAME_OPTIONS, med.name)}</div>
-    <div><label>Dose</label>${dropdownFieldHtml('med-dose', MED_DOSE_OPTIONS, med.dose)}</div>
-    <div><label>Frequency</label>${dropdownFieldHtml('med-frequency', MED_FREQUENCY_OPTIONS, med.frequency)}</div>
-    <div><label>Duration</label>${dropdownFieldHtml('med-duration', MED_DURATION_OPTIONS, med.duration)}</div>
-    <div><label>Route</label>${dropdownFieldHtml('med-route', MED_ROUTE_OPTIONS, med.route)}</div>
-    <div><label>Instruction</label>${dropdownFieldHtml('med-instruction', MED_INSTRUCTION_OPTIONS, med.instruction)}</div>
+    <div><label>Medicine</label>${comboFieldHtml('med-name', med.name)}</div>
+    <div><label>Dose</label>${comboFieldHtml('med-dose', med.dose)}</div>
+    <div><label>Frequency</label>${comboFieldHtml('med-frequency', med.frequency)}</div>
+    <div><label>Duration</label>${comboFieldHtml('med-duration', med.duration)}</div>
+    <div><label>Route</label>${comboFieldHtml('med-route', med.route)}</div>
+    <div><label>Instruction</label>${comboFieldHtml('med-instruction', med.instruction)}</div>
     <button type="button" class="opd-med-remove" title="Remove">✕</button>
   `;
-  ['med-name', 'med-dose', 'med-frequency', 'med-duration', 'med-route', 'med-instruction'].forEach(cls => bindOtherToggle(row, cls));
+  initCombobox(row.querySelector('.med-name'), () => state.medicineOptions);
+  initCombobox(row.querySelector('.med-dose'), () => state.medDoseOptions);
+  initCombobox(row.querySelector('.med-frequency'), () => state.medFrequencyOptions);
+  initCombobox(row.querySelector('.med-duration'), () => state.medDurationOptions);
+  initCombobox(row.querySelector('.med-route'), () => state.medRouteOptions);
+  initCombobox(row.querySelector('.med-instruction'), () => state.medInstructionOptions);
   row.querySelector('.opd-med-remove').addEventListener('click', () => row.remove());
   list.appendChild(row);
 }
@@ -1352,12 +1566,12 @@ function escapeAttr(str) {
 
 function collectMedicines() {
   return Array.from($('opd-med-list').querySelectorAll('.opd-med-row')).map(row => ({
-    name: fieldValue(row, 'med-name'),
-    dose: fieldValue(row, 'med-dose'),
-    frequency: fieldValue(row, 'med-frequency'),
-    duration: fieldValue(row, 'med-duration'),
-    route: fieldValue(row, 'med-route'),
-    instruction: fieldValue(row, 'med-instruction'),
+    name: row.querySelector('.med-name').value.trim(),
+    dose: row.querySelector('.med-dose').value.trim(),
+    frequency: row.querySelector('.med-frequency').value.trim(),
+    duration: row.querySelector('.med-duration').value.trim(),
+    route: row.querySelector('.med-route').value.trim(),
+    instruction: row.querySelector('.med-instruction').value.trim(),
   })).filter(m => m.name);
 }
 
@@ -1376,32 +1590,68 @@ function clearInvestigationRows(containerId) {
   $(containerId).innerHTML = '';
 }
 
+// opts.checkable renders an on/off checkbox for routine defaults (X-Ray, CBC)
+// that most patients need but some don't — unchecking excludes the row from
+// being saved without having to delete it.
 function addInvestigationRow(containerId, inv = {}, opts = {}) {
   const showComment = opts.showComment !== false;
+  const checkable = !!opts.checkable;
+  const checked = inv.checked !== false;
   const list = $(containerId);
   const row = document.createElement('div');
-  row.className = 'opd-invest-row' + (showComment ? '' : ' compact');
-  const options = INVESTIGATION_OPTIONS.map(opt =>
-    `<option value="${opt}" ${inv.type === opt ? 'selected' : ''}>${opt}</option>`
-  ).join('');
+  row.className = 'opd-invest-row' + (showComment ? '' : ' compact') + (checkable ? ' checkable' : '') + (checkable && !checked ? ' row-off' : '');
   row.innerHTML = `
-    <div><label>Investigation</label><select class="inv-type"><option value="">Select…</option>${options}</select></div>
-    <div><label>Detail / Area</label><input type="text" class="inv-detail" placeholder="e.g. Right Knee" value="${escapeAttr(inv.detail)}" /></div>
-    <div><label>Instruction</label><input type="text" class="inv-instruction" placeholder="e.g. get done before next visit" value="${escapeAttr(inv.instruction)}" /></div>
+    <div><label>${checkable ? `<input type="checkbox" class="inv-checked" ${checked ? 'checked' : ''} /> ` : ''}Investigation</label>
+      <div class="combo-wrap">
+        <input type="text" class="inv-type" placeholder="Type or select…" autocomplete="off" value="${escapeAttr(inv.type)}" />
+        <div class="combo-panel"></div>
+      </div>
+    </div>
+    <div><label>Detail / Area</label>
+      <div class="combo-wrap">
+        <input type="text" class="inv-detail" placeholder="e.g. Right Knee" autocomplete="off" value="${escapeAttr(inv.detail)}" />
+        <div class="combo-panel"></div>
+      </div>
+    </div>
+    <div><label>Instruction</label>
+      <div class="combo-wrap">
+        <input type="text" class="inv-instruction" placeholder="e.g. get done before next visit" autocomplete="off" value="${escapeAttr(inv.instruction)}" />
+        <div class="combo-panel"></div>
+      </div>
+    </div>
     ${showComment ? `<div><label>Report Comment</label><input type="text" class="inv-comment" placeholder="Findings once report is in…" value="${escapeAttr(inv.comment)}" /></div>` : ''}
     <button type="button" class="opd-med-remove" title="Remove">✕</button>
   `;
+  initCombobox(row.querySelector('.inv-type'), () => state.investigationOptions);
+  // Detail/Area and Instruction suggestions both depend on whichever investigation
+  // is currently typed in this same row (X-Ray → body parts, CBC → sample type, etc.).
+  initCombobox(row.querySelector('.inv-detail'), () => state.investigationDetailOptions[row.querySelector('.inv-type').value.trim()] || []);
+  initCombobox(row.querySelector('.inv-instruction'), () => state.investigationInstructionOptions[row.querySelector('.inv-type').value.trim()] || []);
+  if (checkable) {
+    row.querySelector('.inv-checked').addEventListener('change', e => {
+      row.classList.toggle('row-off', !e.target.checked);
+    });
+  }
   row.querySelector('.opd-med-remove').addEventListener('click', () => row.remove());
   list.appendChild(row);
 }
 
+// X-Ray and CBC are needed for nearly every patient — pre-add them (checked)
+// so the doctor only has to uncheck the ones that don't apply, instead of
+// typing them out every single visit.
+function addDefaultInvestigationRows(containerId, opts = {}) {
+  ['X-Ray', 'CBC'].forEach(type => addInvestigationRow(containerId, { type, checked: true }, { ...opts, checkable: true }));
+}
+
 function collectInvestigations(containerId) {
-  return Array.from($(containerId).querySelectorAll('.opd-invest-row')).map(row => ({
-    type: row.querySelector('.inv-type').value,
-    detail: row.querySelector('.inv-detail').value.trim(),
-    instruction: row.querySelector('.inv-instruction').value.trim(),
-    comment: row.querySelector('.inv-comment')?.value.trim() || '',
-  })).filter(i => i.type);
+  return Array.from($(containerId).querySelectorAll('.opd-invest-row'))
+    .filter(row => row.querySelector('.inv-checked')?.checked !== false)
+    .map(row => ({
+      type: row.querySelector('.inv-type').value.trim(),
+      detail: row.querySelector('.inv-detail').value.trim(),
+      instruction: row.querySelector('.inv-instruction').value.trim(),
+      comment: row.querySelector('.inv-comment')?.value.trim() || '',
+    })).filter(i => i.type);
 }
 
 // The quick investigation modal has no Report Comment field — when saving from
@@ -1621,6 +1871,8 @@ async function saveOpdRecord(payload) {
   const data = await res.json();
   if (!data.success) throw new Error(data.message);
   if (!id) $('of2-id').value = data.id;
+
+  syncCustomOptions(payload.medicines, payload.investigations);
 
   // Mirror the follow-up date into the serve modal's quick field if it's still empty
   if ($('sf-followup') && !$('sf-followup').value.trim() && payload.follow_up_date) $('sf-followup').value = payload.follow_up_date;

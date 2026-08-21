@@ -180,6 +180,33 @@ class DynamicDatabaseService {
           }
         });
       }
+
+      // custom_options originally had no 'context' column (UNIQUE(category, value) only).
+      // SQLite can't add a column into an existing UNIQUE constraint via ALTER TABLE, so
+      // rebuild the table — preserving existing rows as global (context = '') entries.
+      const customOptExists = this.db.prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='custom_options'`
+      ).get();
+      if (customOptExists) {
+        const customOptCols = this.db.prepare(`PRAGMA table_info(custom_options)`).all() as any[];
+        if (!customOptCols.some(c => c.name === 'context')) {
+          this.db.exec(`
+            ALTER TABLE custom_options RENAME TO custom_options_old;
+            CREATE TABLE custom_options (
+              id          INTEGER PRIMARY KEY AUTOINCREMENT,
+              category    TEXT NOT NULL,
+              context     TEXT NOT NULL DEFAULT '' COLLATE NOCASE,
+              value       TEXT NOT NULL COLLATE NOCASE,
+              created_at  TEXT NOT NULL,
+              UNIQUE(category, context, value)
+            );
+            INSERT OR IGNORE INTO custom_options (category, context, value, created_at)
+              SELECT category, '', value, created_at FROM custom_options_old;
+            DROP TABLE custom_options_old;
+          `);
+          console.log(`✅ ${this.dbName}: Migration applied — custom_options rebuilt with 'context' column`);
+        }
+      }
     } catch (error: any) {
       console.error(`❌ ${this.dbName}: Migration failed:`, error.message);
     }

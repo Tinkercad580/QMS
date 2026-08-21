@@ -8,6 +8,67 @@ const router = Router();
 const db = DynamicDatabaseService.getDatabase('queue', QUEUE_SCHEMA);
 // Ensure opd_records exists even if 'queue' db was already initialized by queue.ts/appointments.ts first.
 db.createTable('opd_records', OPD_SCHEMA);
+db.createTable('custom_options', `
+  CREATE TABLE IF NOT EXISTS custom_options (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    category    TEXT NOT NULL,
+    context     TEXT NOT NULL DEFAULT '' COLLATE NOCASE,
+    value       TEXT NOT NULL COLLATE NOCASE,
+    created_at  TEXT NOT NULL,
+    UNIQUE(category, context, value)
+  );
+`);
+
+// ─── Custom options (medicine/investigation field values typed by hand) ──
+// Remembered across patients so the next doctor sees them as a suggestion
+// instead of having to retype the same thing.
+// Flat categories (medicine name, medicine dose/frequency/duration/route/
+// instruction, investigation type) — no context, one global list per category.
+router.get('/options/:category', (req: Request, res: Response) => {
+    try {
+        const rows = db.query(
+            `SELECT value FROM custom_options WHERE category = ? AND context = '' ORDER BY value COLLATE NOCASE`,
+            [req.params.category]
+        ) as any[];
+        res.json({ success: true, values: rows.map(r => r.value) });
+    } catch (e: any) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// Context-scoped categories (investigation detail/instruction — scoped to the
+// investigation type they were entered under) — returns every context's list
+// at once as { "X-Ray": [...], "CBC": [...] } so the frontend doesn't need a
+// round-trip per row/type.
+router.get('/options/:category/by-context', (req: Request, res: Response) => {
+    try {
+        const rows = db.query(
+            `SELECT context, value FROM custom_options WHERE category = ? AND context != '' ORDER BY value COLLATE NOCASE`,
+            [req.params.category]
+        ) as any[];
+        const grouped: Record<string, string[]> = {};
+        rows.forEach(r => { (grouped[r.context] ||= []).push(r.value); });
+        res.json({ success: true, grouped });
+    } catch (e: any) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+router.post('/options', (req: Request, res: Response) => {
+    try {
+        const { category, value, context } = req.body;
+        if (!category?.trim() || !value?.trim()) {
+            return res.status(400).json({ success: false, message: 'category and value required' });
+        }
+        db.exec(
+            `INSERT OR IGNORE INTO custom_options (category, context, value, created_at) VALUES (?, ?, ?, ?)`,
+            [category.trim(), context?.trim() || '', value.trim(), new Date().toISOString()]
+        );
+        res.status(201).json({ success: true });
+    } catch (e: any) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
 
 // ─── GET OPD records (by patient_id, queue_entry_id, or date) ─
 router.get('/', (req: Request, res: Response) => {
