@@ -19,9 +19,9 @@ function generatePatientId(): string {
 // ══════════════════════════════════════════════
 
 // 1️⃣ GET all patients
-router.get('/', (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
     try {
-        const patients = db.query(`
+        const patients = await db.query(`
             SELECT
                 p.*,
                 COUNT(v.id) AS visit_count,
@@ -38,7 +38,7 @@ router.get('/', (req: Request, res: Response) => {
 });
 
 // 2️⃣ POST create patient
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
     try {
         const body = req.body;
         if (!body.full_name?.trim()) {
@@ -81,8 +81,8 @@ router.post('/', (req: Request, res: Response) => {
             updated_at: now,
         };
 
-        const insertedId = db.insert('patients', data);
-        
+        const insertedId = await db.insert('patients', data);
+
         res.status(201).json({ success: true, id: insertedId, message: 'Patient created' });
     } catch (e: any) {
         console.error('POST /patients failed:', e.message);
@@ -91,13 +91,13 @@ router.post('/', (req: Request, res: Response) => {
 });
 
 // 3️⃣ GET /search  ← MUST be before /:id
-router.get('/search', (req: Request, res: Response) => {
+router.get('/search', async (req: Request, res: Response) => {
     try {
         const q = `%${(req.query.q as string) || ''}%`;
-        const results = db.query(
+        const results = await db.query(
             `SELECT id, patient_id, full_name, mobile, age, gender, blood_group, created_at
              FROM patients
-             WHERE full_name LIKE ? OR mobile LIKE ? OR patient_id LIKE ?
+             WHERE full_name ILIKE ? OR mobile ILIKE ? OR patient_id ILIKE ?
              ORDER BY full_name ASC LIMIT 20`,
             [q, q, q]
         );
@@ -108,11 +108,11 @@ router.get('/search', (req: Request, res: Response) => {
 });
 
 // 4️⃣ GET /visits  ← MUST be before /:id
-router.get('/visits', (req: Request, res: Response) => {
+router.get('/visits', async (req: Request, res: Response) => {
     try {
         const { patient_id } = req.query;
         if (!patient_id) return res.status(400).json({ success: false, message: 'patient_id required' });
-        const visits = db.query(
+        const visits = await db.query(
             `SELECT * FROM patient_visits WHERE patient_id = ? ORDER BY visit_date DESC`,
             [patient_id]
         );
@@ -123,12 +123,12 @@ router.get('/visits', (req: Request, res: Response) => {
 });
 
 // 5️⃣ POST /visits  ← MUST be before /:id
-router.post('/visits', (req: Request, res: Response) => {
+router.post('/visits', async (req: Request, res: Response) => {
     try {
         const body = req.body;
         if (!body.patient_id) return res.status(400).json({ success: false, message: 'patient_id required' });
 
-        const patient = db.selectOne('patients', 'id = ?', [body.patient_id]);
+        const patient = await db.selectOne('patients', 'id = ?', [body.patient_id]);
         if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
 
         const now = new Date().toISOString();
@@ -145,7 +145,7 @@ router.post('/visits', (req: Request, res: Response) => {
             created_at: now,
         };
 
-        const id = db.insert('patient_visits', data);
+        const id = await db.insert('patient_visits', data);
         res.status(201).json({ success: true, id, message: 'Visit logged' });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });
@@ -153,11 +153,11 @@ router.post('/visits', (req: Request, res: Response) => {
 });
 
 // 6️⃣ GET /:id  ← wildcard, AFTER all named routes
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
     try {
-        const patient = db.selectOne('patients', 'id = ?', [req.params.id as string]);
+        const patient = await db.selectOne('patients', 'id = ?', [req.params.id as string]);
         if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
-        const visits = db.select('patient_visits', 'patient_id = ?', [req.params.id]);
+        const visits = await db.select('patient_visits', 'patient_id = ?', [req.params.id]);
         res.json({ success: true, patient: { ...patient, visits } });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });
@@ -165,12 +165,12 @@ router.get('/:id', (req: Request, res: Response) => {
 });
 
 // 7️⃣ PUT /:id
-router.put('/:id', (req: Request, res: Response) => {
+router.put('/:id', async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id as string, 10);
         const body = req.body;
 
-        const existing = db.selectOne('patients', 'id = ?', [id]);
+        const existing = await db.selectOne('patients', 'id = ?', [id]);
         if (!existing) return res.status(404).json({ success: false, message: 'Patient not found' });
 
         if (body.full_name !== undefined && !body.full_name?.trim()) {
@@ -190,7 +190,7 @@ router.put('/:id', (req: Request, res: Response) => {
             if (body[f] !== undefined) updates[f] = body[f] === '' ? null : body[f];
         });
 
-        const changed = db.update('patients', updates, 'id = ?', [id]);
+        const changed = await db.update('patients', updates, 'id = ?', [id]);
         res.json({ success: true, changes: changed, message: 'Patient updated' });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });
@@ -198,15 +198,15 @@ router.put('/:id', (req: Request, res: Response) => {
 });
 
 // 8️⃣ DELETE /:id
-router.delete('/:id', (req: Request, res: Response) => {
+router.delete('/:id', async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id as string, 10);
-        const existing = db.selectOne('patients', 'id = ?', [id]);
+        const existing = await db.selectOne('patients', 'id = ?', [id]);
         if (!existing) return res.status(404).json({ success: false, message: 'Patient not found' });
 
-        db.transaction(() => {
-            db.delete('patient_visits', 'patient_id = ?', [id]);
-            db.delete('patients', 'id = ?', [id]);
+        await db.transaction(async () => {
+            await db.delete('patient_visits', 'patient_id = ?', [id]);
+            await db.delete('patients', 'id = ?', [id]);
         });
 
         res.json({ success: true, message: 'Patient and all visit history deleted' });
@@ -218,11 +218,11 @@ router.delete('/:id', (req: Request, res: Response) => {
 // ─── Separate /api/visits router ──────────────────────────────
 export const visitsRouter = Router();
 
-visitsRouter.get('/', (req: Request, res: Response) => {
+visitsRouter.get('/', async (req: Request, res: Response) => {
     try {
         const { patient_id } = req.query;
         if (!patient_id) return res.status(400).json({ success: false, message: 'patient_id required' });
-        const visits = db.query(
+        const visits = await db.query(
             `SELECT * FROM patient_visits WHERE patient_id = ? ORDER BY visit_date DESC`,
             [patient_id]
         );
@@ -232,7 +232,7 @@ visitsRouter.get('/', (req: Request, res: Response) => {
     }
 });
 
-visitsRouter.post('/', (req: Request, res: Response) => {
+visitsRouter.post('/', async (req: Request, res: Response) => {
     try {
         const body = req.body;
         if (!body.patient_id) return res.status(400).json({ success: false, message: 'patient_id required' });
@@ -249,7 +249,7 @@ visitsRouter.post('/', (req: Request, res: Response) => {
             notes: body.notes?.trim() || null,
             created_at: now,
         };
-        const id = db.insert('patient_visits', data);
+        const id = await db.insert('patient_visits', data);
         res.status(201).json({ success: true, id, message: 'Visit logged' });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });

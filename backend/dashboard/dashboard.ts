@@ -7,6 +7,12 @@ const router = Router();
 const queueDb = DynamicDatabaseService.getDatabase('queue', QUEUE_SCHEMA);
 const patientDb = DynamicDatabaseService.getDatabase('patients', PATIENT_SCHEMA);
 
+// IST is UTC+5:30 — created_at/visit_date are stored as UTC ISO strings, so
+// shifting by this literal interval before taking the date part mirrors what
+// SQLite's date(col, '+5 hours', '+30 minutes') did (naive offset, not a real
+// timezone conversion — kept identical on purpose to not shift historical data).
+const IST_DATE = (col: string) => `(${col}::timestamp + interval '5 hours 30 minutes')::date`;
+
 // ─── HELPER ──────────────────────────────────────────────────
 function getGroupLabel(dateStr: string, group: string): string {
   const d = new Date(dateStr);
@@ -20,14 +26,13 @@ function getGroupLabel(dateStr: string, group: string): string {
 
 // ─── GET /api/dashboard/kpi?from=&to= ────────────────────────
 // Returns all KPI numbers for the given date range
-router.get('/kpi', (req: Request, res: Response) => {
+router.get('/kpi', async (req: Request, res: Response) => {
   try {
     const { from, to } = req.query as Record<string, string>;
     if (!from || !to) return res.status(400).json({ success: false, message: 'from and to required' });
 
     // Queue stats (fee, collected, walkins, done, noshow, missed, waiting)
-    // Queue stats (fee, collected, walkins, done, noshow, missed, waiting)
-    const queueStats = queueDb.query(`
+    const queueStats = await queueDb.query(`
       SELECT
       COUNT(*) AS total_queue,
       SUM(fee) AS total_fee,
@@ -40,40 +45,40 @@ router.get('/kpi', (req: Request, res: Response) => {
       SUM(CASE WHEN status IN ('WAITING','CALLED','SERVING') THEN 1 ELSE 0 END) AS total_waiting
       FROM queue_entries
       WHERE queue_date BETWEEN ? AND ?
-      `, [from, to]) as any[];
+      `, [from, to]);
 
     // Appointment count
-    const apptStats = queueDb.query(`
+    const apptStats = await queueDb.query(`
       SELECT COUNT(*) AS total_appointments
       FROM appointments
       WHERE appt_date BETWEEN ? AND ?
-    `, [from, to]) as any[];
+    `, [from, to]);
 
-    // SMS count (Fixed using IST offset)
-    const smsStats = queueDb.query(`
+    // SMS count (IST offset)
+    const smsStats = await queueDb.query(`
       SELECT COUNT(*) AS total_sms
       FROM sms_logs
-      WHERE date(created_at, '+5 hours', '+30 minutes') BETWEEN ? AND ?
-    `, [from, to]) as any[];
+      WHERE ${IST_DATE('created_at')} BETWEEN ? AND ?
+    `, [from, to]);
 
     // Total patients (all-time)
-    const patientTotal = patientDb.query(`
+    const patientTotal = await patientDb.query(`
       SELECT COUNT(*) AS total_patients FROM patients
-    `, []) as any[];
+    `, []);
 
-    // New patients in range (Fixed using IST offset)
-    const newPatients = patientDb.query(`
+    // New patients in range (IST offset)
+    const newPatients = await patientDb.query(`
       SELECT COUNT(*) AS new_patients
       FROM patients
-      WHERE date(created_at, '+5 hours', '+30 minutes') BETWEEN ? AND ?
-    `, [from, to]) as any[];
+      WHERE ${IST_DATE('created_at')} BETWEEN ? AND ?
+    `, [from, to]);
 
-    // Total visit records in range (Restored to check actual medical records, with IST fix)
-    const visitStats = patientDb.query(`
+    // Total visit records in range (IST offset)
+    const visitStats = await patientDb.query(`
       SELECT COUNT(*) AS total_visits
       FROM patient_visits
-      WHERE date(visit_date, '+5 hours', '+30 minutes') BETWEEN ? AND ?
-    `, [from, to]) as any[];
+      WHERE ${IST_DATE('visit_date')} BETWEEN ? AND ?
+    `, [from, to]);
 
     const q = queueStats[0] || {};
     const data = {
@@ -102,17 +107,17 @@ router.get('/kpi', (req: Request, res: Response) => {
 
 // ─── GET /api/dashboard/trend?from=&to=&group= ───────────────
 // Returns revenue + visit counts grouped by day/week/month
-router.get('/trend', (req: Request, res: Response) => {
+router.get('/trend', async (req: Request, res: Response) => {
   try {
     const { from, to, group = 'day' } = req.query as Record<string, string>;
     if (!from || !to) return res.status(400).json({ success: false, message: 'from and to required' });
 
     let groupExpr: string;
-    if (group === 'month') groupExpr = `strftime('%Y-%m', queue_date)`;
-    else if (group === 'week') groupExpr = `strftime('%Y-W%W', queue_date)`;
+    if (group === 'month') groupExpr = `to_char(queue_date::date, 'YYYY-MM')`;
+    else if (group === 'week') groupExpr = `to_char(queue_date::date, 'IYYY-"W"IW')`;
     else groupExpr = `queue_date`;
 
-    const rows = queueDb.query(`
+    const rows = await queueDb.query(`
       SELECT
         ${groupExpr}          AS period,
         SUM(amount_paid)      AS revenue,
@@ -121,7 +126,7 @@ router.get('/trend', (req: Request, res: Response) => {
       WHERE queue_date BETWEEN ? AND ?
       GROUP BY period
       ORDER BY period ASC
-    `, [from, to]) as any[];
+    `, [from, to]);
 
     // Build human-friendly labels
     const data = rows.map(r => ({
@@ -140,31 +145,31 @@ router.get('/trend', (req: Request, res: Response) => {
 
 // ─── GET /api/dashboard/breakdown?from=&to= ──────────────────
 // Returns visit type, queue status and priority distributions
-router.get('/breakdown', (req: Request, res: Response) => {
+router.get('/breakdown', async (req: Request, res: Response) => {
   try {
     const { from, to } = req.query as Record<string, string>;
     if (!from || !to) return res.status(400).json({ success: false, message: 'from and to required' });
 
-    const visitTypes = queueDb.query(`
+    const visitTypes = await queueDb.query(`
       SELECT COALESCE(visit_type, 'Unknown') AS label, COUNT(*) AS count
       FROM queue_entries
       WHERE queue_date BETWEEN ? AND ? AND visit_type IS NOT NULL AND visit_type != ''
       GROUP BY label ORDER BY count DESC LIMIT 10
-    `, [from, to]) as any[];
+    `, [from, to]);
 
-    const statuses = queueDb.query(`
+    const statuses = await queueDb.query(`
       SELECT status AS label, COUNT(*) AS count
       FROM queue_entries
       WHERE queue_date BETWEEN ? AND ?
       GROUP BY status ORDER BY count DESC
-    `, [from, to]) as any[];
+    `, [from, to]);
 
-    const priorities = queueDb.query(`
+    const priorities = await queueDb.query(`
       SELECT priority AS label, COUNT(*) AS count
       FROM queue_entries
       WHERE queue_date BETWEEN ? AND ?
       GROUP BY priority ORDER BY count DESC
-    `, [from, to]) as any[];
+    `, [from, to]);
 
     res.json({
       success: true,
@@ -177,7 +182,7 @@ router.get('/breakdown', (req: Request, res: Response) => {
 
 // ─── GET /api/dashboard/all-patients ───────────────────
 // Replaces the old activity route to serve a paginated patient directory
-router.get('/all-patients', (req: Request, res: Response) => {
+router.get('/all-patients', async (req: Request, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = 10; // Exactly 10 records per page as requested
@@ -188,13 +193,13 @@ router.get('/all-patients', (req: Request, res: Response) => {
     let params: any[] = [];
 
     if (search) {
-      whereClause = `WHERE full_name LIKE ? OR mobile LIKE ? OR patient_id LIKE ?`;
+      whereClause = `WHERE full_name ILIKE ? OR mobile ILIKE ? OR patient_id ILIKE ?`;
       params = [`%${search}%`, `%${search}%`, `%${search}%`];
     }
 
     // Get total count for pagination math
     const countQuery = `SELECT COUNT(*) as total FROM patients ${whereClause}`;
-    const totalResult = patientDb.query(countQuery, params) as any[];
+    const totalResult = await patientDb.query(countQuery, params);
     const total = totalResult[0]?.total || 0;
 
     // Get paginated rows
@@ -205,7 +210,7 @@ router.get('/all-patients', (req: Request, res: Response) => {
       ORDER BY created_at DESC
       LIMIT ? OFFSET ?
     `;
-    const rows = patientDb.query(rowsQuery, [...params, limit, offset]) as any[];
+    const rows = await patientDb.query(rowsQuery, [...params, limit, offset]);
 
     res.json({ success: true, data: rows, total, page });
   } catch (e: any) {
@@ -214,13 +219,13 @@ router.get('/all-patients', (req: Request, res: Response) => {
 });
 // ─── GET /api/dashboard/day?date= ────────────────────────────
 // Single-day deep snapshot including all queue entries for that day
-router.get('/day', (req: Request, res: Response) => {
+router.get('/day', async (req: Request, res: Response) => {
   try {
     const { date } = req.query as Record<string, string>;
     if (!date) return res.status(400).json({ success: false, message: 'date required' });
 
     // 1. Queue stats: Calculate Revenue, Collected, Pending, etc.
-    const stats = queueDb.query(`
+    const stats = await queueDb.query(`
 SELECT
 SUM(fee) AS revenue,
 SUM(amount_paid) AS collected,
@@ -231,25 +236,24 @@ SUM(CASE WHEN status = 'DONE' THEN 1 ELSE 0 END) AS done,
 SUM(CASE WHEN status IN ('NOSHOW','MISSED') THEN 1 ELSE 0 END) AS noshow
 FROM queue_entries
 WHERE queue_date = ?
-`, [date]) as any[];
+`, [date]);
 
     // Correct total appointments booked for this date (regardless of check-in status)
-    const apptCountForDay = queueDb.query(`
+    const apptCountForDay = await queueDb.query(`
 SELECT COUNT(*) AS total
 FROM appointments
 WHERE appt_date = ?
-`, [date]) as any[];
+`, [date]);
 
-    // 2. New Registrations: Count patients registered on this specific date (with IST fix)
-    const newReg = patientDb.query(`
-      SELECT COUNT(*) as count 
-      FROM patients 
-      WHERE date(created_at, '+5 hours', '+30 minutes') = ?
-    `, [date]) as any[];
+    // 2. New Registrations: Count patients registered on this specific date (IST offset)
+    const newReg = await patientDb.query(`
+      SELECT COUNT(*) as count
+      FROM patients
+      WHERE ${IST_DATE('created_at')} = ?
+    `, [date]);
 
     // 3. Get all entries
-    // 3. Get all entries
-    const entries = queueDb.query(`
+    const entries = await queueDb.query(`
         SELECT
         id, token_number, patient_id, patient_name, mobile,
         ticket_type, visit_type, doctor, priority, status,
@@ -260,15 +264,15 @@ WHERE appt_date = ?
         ORDER BY
         CASE priority WHEN 'EMERGENCY' THEN 0 WHEN 'VIP' THEN 1 ELSE 2 END ASC,
         token_number ASC
-      `, [date]) as any[];
+      `, [date]);
 
     // 3b. Appointments booked for this date but NEVER checked into the queue
-    const noShowAppointments = queueDb.query(`
+    const noShowAppointments = await queueDb.query(`
         SELECT id, patient_id, patient_name, mobile, slot_time, doctor, visit_type, priority, fee, status
         FROM appointments
         WHERE appt_date = ? AND status = 'WAITING'
         ORDER BY slot_time ASC
-    `, [date]) as any[];
+    `, [date]);
 
     const s = stats[0] || {};
     res.json({
@@ -293,12 +297,12 @@ WHERE appt_date = ?
 
 // ─── GET /api/dashboard/patient-queue?patient_id= ────────────
 // Full queue history for a specific patient (for drawer)
-router.get('/patient-queue', (req: Request, res: Response) => {
+router.get('/patient-queue', async (req: Request, res: Response) => {
   try {
     const { patient_id } = req.query as Record<string, string>;
     if (!patient_id) return res.status(400).json({ success: false, message: 'patient_id required' });
 
-    const rows = queueDb.query(`
+    const rows = await queueDb.query(`
       SELECT
         id, token_number, queue_date, ticket_type, visit_type,
         doctor, priority, status, fee, amount_paid,
@@ -306,7 +310,7 @@ router.get('/patient-queue', (req: Request, res: Response) => {
       FROM queue_entries
       WHERE patient_id = ?
       ORDER BY queue_date DESC, token_number DESC
-    `, [patient_id]) as any[];
+    `, [patient_id]);
 
     res.json({ success: true, data: rows });
   } catch (e: any) {

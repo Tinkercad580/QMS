@@ -10,11 +10,11 @@ const queueDb = DynamicDatabaseService.getDatabase('queue', QUEUE_SCHEMA);
 const patientDb = DynamicDatabaseService.getDatabase('patients', PATIENT_SCHEMA);
 
 // ─── HELPER: Next Token ───────────────────────────────
-function getNextToken(date: string): number {
-    const result = queueDb.query(
+async function getNextToken(date: string): Promise<number> {
+    const result = await queueDb.query(
         `SELECT MAX(token_number) as max_token FROM queue_entries WHERE queue_date = ?`,
         [date]
-    ) as any[];
+    );
     return (result[0]?.max_token || 0) + 1;
 }
 
@@ -23,7 +23,7 @@ function getNextToken(date: string): number {
 async function triggerStaggeredSms(queueDate: string) {
     try {
         // Updated LIMIT to 3 to notify the next 3 people in the queue
-        const waitingPatients = queueDb.query(`
+        const waitingPatients = await queueDb.query(`
             SELECT * FROM queue_entries
             WHERE queue_date = ? AND status = 'WAITING'
             ORDER BY
@@ -32,17 +32,17 @@ async function triggerStaggeredSms(queueDate: string) {
                 CASE WHEN called_at IS NOT NULL THEN updated_at ELSE '0' END ASC,
                 token_number ASC
             LIMIT 3
-        `, [queueDate]) as any[];
+        `, [queueDate]);
 
         for (let i = 0; i < waitingPatients.length; i++) {
             const p = waitingPatients[i];
             if (!p.mobile) continue;
 
             // Check if they already received the 'GET_READY' message today
-            const alreadySent = queueDb.query(`
-                SELECT id FROM sms_logs 
+            const alreadySent = await queueDb.query(`
+                SELECT id FROM sms_logs
                 WHERE queue_entry_id = ? AND status = 'GET_READY'
-            `, [p.id]) as any[];
+            `, [p.id]);
 
             if (alreadySent.length === 0) {
                 // Dynamically build their position and send
@@ -53,7 +53,7 @@ async function triggerStaggeredSms(queueDate: string) {
                 const msg = `Hello ${p.patient_name}, you are currently ${positionText} (Token #${p.token_number}). Please be ready for your turn! - ClinicBase`;
 
                 // 1. Log as sent
-                queueDb.insert('sms_logs', {
+                await queueDb.insert('sms_logs', {
                     queue_entry_id: p.id,
                     mobile: p.mobile,
                     message: msg,
@@ -71,10 +71,10 @@ async function triggerStaggeredSms(queueDate: string) {
 }
 
 // ─── GET queue for a date ─────────────────────────────
-router.get('/', (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
     try {
         const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
-        const queue = queueDb.query(`
+        const queue = await queueDb.query(`
             SELECT * FROM queue_entries
             WHERE queue_date = ?
             ORDER BY
@@ -103,13 +103,13 @@ router.post('/', async (req: Request, res: Response) => {
 
         const now = new Date().toISOString();
         const date = body.queue_date || now.slice(0, 10);
-        const token = getNextToken(date);
+        const token = await getNextToken(date);
 
         // Register a new patient record if this walk-in isn't linked to an existing one,
         // so they appear in the Patients list just like a manually-added patient would.
         const patientId = body.patient_id
             ? parseInt(body.patient_id)
-            : findOrCreatePatient({ full_name: body.patient_name, mobile: body.mobile, visit_type: body.visit_type });
+            : await findOrCreatePatient({ full_name: body.patient_name, mobile: body.mobile, visit_type: body.visit_type });
 
         const data: Record<string, any> = {
             patient_id: patientId,
@@ -132,12 +132,12 @@ router.post('/', async (req: Request, res: Response) => {
             updated_at: now,
         };
 
-        const id = queueDb.insert('queue_entries', data);
+        const id = await queueDb.insert('queue_entries', data);
 
         // Immediate Welcome SMS
         if (body.mobile) {
             const msg = `Dear ${body.patient_name}, you've been added to the Live Queue (Token #${token}). Please wait for your turn. - ClinicBase`;
-            queueDb.insert('sms_logs', { queue_entry_id: id, mobile: body.mobile, message: msg, status: 'WELCOME', created_at: now });
+            await queueDb.insert('sms_logs', { queue_entry_id: id, mobile: body.mobile, message: msg, status: 'WELCOME', created_at: now });
             sendSms(body.mobile, msg).catch((e: any) => console.error("SMS error:", e));
         }
 
@@ -156,17 +156,17 @@ router.post('/inject-appointment', async (req: Request, res: Response) => {
         const { appointment_id } = req.body;
         if (!appointment_id) return res.status(400).json({ success: false, message: 'appointment_id required' });
 
-        const appt = queueDb.selectOne('appointments', 'id = ?', [appointment_id]) as any;
+        const appt = await queueDb.selectOne('appointments', 'id = ?', [appointment_id]) as any;
         if (!appt) return res.status(404).json({ success: false, message: 'Appointment not found' });
 
-        const existing = queueDb.query(`SELECT id FROM queue_entries WHERE appointment_id = ?`, [appointment_id]) as any[];
+        const existing = await queueDb.query(`SELECT id FROM queue_entries WHERE appointment_id = ?`, [appointment_id]);
         if (existing.length) return res.status(400).json({ success: false, message: 'Already in queue' });
 
         const now = new Date().toISOString();
         const date = appt.appt_date;
-        const token = getNextToken(date);
+        const token = await getNextToken(date);
 
-        const id = queueDb.insert('queue_entries', {
+        const id = await queueDb.insert('queue_entries', {
             patient_id: appt.patient_id || null,
             patient_name: appt.patient_name,
             mobile: appt.mobile || null,
@@ -188,12 +188,12 @@ router.post('/inject-appointment', async (req: Request, res: Response) => {
             updated_at: now,
         });
 
-        queueDb.update('appointments', { status: 'QUEUED', updated_at: now }, 'id = ?', [appointment_id]);
+        await queueDb.update('appointments', { status: 'QUEUED', updated_at: now }, 'id = ?', [appointment_id]);
 
         // Immediate Queue Addition SMS
         if (appt.mobile) {
             const msg = `Dear ${appt.patient_name}, you have checked in for your appointment. Your Live Queue Token is #${token}. - ClinicBase`;
-            queueDb.insert('sms_logs', { queue_entry_id: id, mobile: appt.mobile, message: msg, status: 'WELCOME', created_at: now });
+            await queueDb.insert('sms_logs', { queue_entry_id: id, mobile: appt.mobile, message: msg, status: 'WELCOME', created_at: now });
             sendSms(appt.mobile, msg).catch((e: any) => console.error("SMS error:", e));
         }
 
@@ -207,21 +207,20 @@ router.post('/inject-appointment', async (req: Request, res: Response) => {
 });
 
 // ─── POST: queue action ───────────────────────────────
-// ─── POST: queue action ───────────────────────────────
 router.post('/:id/action', async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id as string, 10);
         const { action, status, amount_paid, notes, prescription, follow_up_date, reason } = req.body;
         const now = new Date().toISOString();
 
-        const entry = queueDb.selectOne('queue_entries', 'id = ?', [id]) as any;
+        const entry = await queueDb.selectOne('queue_entries', 'id = ?', [id]) as any;
         if (!entry) return res.status(404).json({ success: false, message: 'Queue entry not found' });
 
         let updates: Record<string, any> = { updated_at: now };
 
         switch (action) {
             case 'start': {
-                const firstWaiting = queueDb.query(`
+                const firstWaiting = await queueDb.query(`
                     SELECT * FROM queue_entries
                     WHERE queue_date = ? AND status = 'WAITING'
                     ORDER BY
@@ -230,11 +229,11 @@ router.post('/:id/action', async (req: Request, res: Response) => {
                         CASE WHEN called_at IS NOT NULL THEN updated_at ELSE '0' END ASC,
                         token_number ASC
                     LIMIT 1
-                `, [entry.queue_date]) as any[];
+                `, [entry.queue_date]);
 
                 if (!firstWaiting.length) return res.json({ success: false, message: 'No waiting patients' });
                 const firstId = firstWaiting[0].id;
-                queueDb.update('queue_entries', { status: 'CALLED', called_at: now, updated_at: now }, 'id = ?', [firstId]);
+                await queueDb.update('queue_entries', { status: 'CALLED', called_at: now, updated_at: now }, 'id = ?', [firstId]);
                 triggerStaggeredSms(entry.queue_date);
                 return res.json({ success: true, message: 'Queue started' });
             }
@@ -273,7 +272,7 @@ router.post('/:id/action', async (req: Request, res: Response) => {
 
                 // The doctor's diagnosis/prescription now live in the linked OPD record
                 // rather than on the serve form — fall back to it if not sent directly.
-                const opdRecord = queueDb.selectOne('opd_records', 'queue_entry_id = ?', [entry.id]) as any;
+                const opdRecord = await queueDb.selectOne('opd_records', 'queue_entry_id = ?', [entry.id]) as any;
                 const effectiveNotes = notes || opdRecord?.diagnosis || null;
                 const effectivePrescription = prescription || opdRecord?.prescription || null;
                 const effectiveFollowUp = follow_up_date || opdRecord?.follow_up_date || null;
@@ -304,12 +303,12 @@ router.post('/:id/action', async (req: Request, res: Response) => {
                                 notes: paymentTag,
                             };
 
-                            const existingVisit = patientDb.selectOne('patient_visits', 'queue_entry_id = ?', [entry.id]) as any;
+                            const existingVisit = await patientDb.selectOne('patient_visits', 'queue_entry_id = ?', [entry.id]) as any;
 
                             if (existingVisit) {
-                                patientDb.update('patient_visits', visitPayload, 'id = ?', [existingVisit.id]);
+                                await patientDb.update('patient_visits', visitPayload, 'id = ?', [existingVisit.id]);
                             } else {
-                                patientDb.insert('patient_visits', { ...visitPayload, created_at: now });
+                                await patientDb.insert('patient_visits', { ...visitPayload, created_at: now });
                             }
                         } catch (ve) {
                             console.error('[Visit Log Error]', ve);
@@ -317,7 +316,7 @@ router.post('/:id/action', async (req: Request, res: Response) => {
                     }
                     if (entry.appointment_id) {
                         const apptStatus = finalStatus === 'DONE' ? 'DONE' : 'NOSHOW';
-                        queueDb.update('appointments', { status: apptStatus, updated_at: now }, 'id = ?', [entry.appointment_id]);
+                        await queueDb.update('appointments', { status: apptStatus, updated_at: now }, 'id = ?', [entry.appointment_id]);
                     }
                 }
                 if (finalStatus === 'MISSED') updates.status = 'MISSED';
@@ -328,7 +327,7 @@ router.post('/:id/action', async (req: Request, res: Response) => {
                 updates.status = 'NOSHOW';
                 updates.served_at = now;
                 if (entry.appointment_id) {
-                    queueDb.update('appointments', { status: 'NOSHOW', updated_at: now }, 'id = ?', [entry.appointment_id]);
+                    await queueDb.update('appointments', { status: 'NOSHOW', updated_at: now }, 'id = ?', [entry.appointment_id]);
                 }
                 break;
             }
@@ -347,9 +346,9 @@ router.post('/:id/action', async (req: Request, res: Response) => {
 
             case 'remove': {
                 if (entry.appointment_id) {
-                    queueDb.update('appointments', { status: 'WAITING', updated_at: now }, 'id = ?', [entry.appointment_id]);
+                    await queueDb.update('appointments', { status: 'WAITING', updated_at: now }, 'id = ?', [entry.appointment_id]);
                 }
-                queueDb.delete('queue_entries', 'id = ?', [id]);
+                await queueDb.delete('queue_entries', 'id = ?', [id]);
                 triggerStaggeredSms(entry.queue_date);
                 return res.json({ success: true, message: 'Removed' });
             }
@@ -357,7 +356,7 @@ router.post('/:id/action', async (req: Request, res: Response) => {
             default: return res.status(400).json({ success: false, message: 'Unknown action' });
         }
 
-        queueDb.update('queue_entries', updates, 'id = ?', [id]);
+        await queueDb.update('queue_entries', updates, 'id = ?', [id]);
         triggerStaggeredSms(entry.queue_date);
         res.json({ success: true, message: 'Updated' });
     } catch (e: any) {
@@ -366,9 +365,9 @@ router.post('/:id/action', async (req: Request, res: Response) => {
 });
 
 // ─── GET single ───────────────────────────────────────
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
     try {
-        const entry = queueDb.selectOne('queue_entries', 'id = ?', [req.params.id as string]);
+        const entry = await queueDb.selectOne('queue_entries', 'id = ?', [req.params.id as string]);
         if (!entry) return res.status(404).json({ success: false, message: 'Not found' });
         res.json({ success: true, entry });
     } catch (e: any) {

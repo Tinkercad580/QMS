@@ -548,7 +548,7 @@ button { cursor: pointer; border: none; background: none; }
 .form-group.full-width { grid-column: 1 / -1; }
 .form-group label, .form-label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
 .form-group input, .form-group select, .form-group textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); font-size: 13px; transition: all var(--transition); outline: none; resize: vertical; }
-.form-group textarea { overflow: hidden; resize: none; min-height: 38px; }
+.form-group textarea { resize: none; min-height: 38px; max-height: 320px; overflow-y: auto; line-height: 20px; }
 .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--primary); background: var(--surface); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
 .form-group input.error { border-color: var(--error); }
 .field-error { font-size: 11px; color: var(--error); }

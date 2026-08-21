@@ -1,12 +1,15 @@
 // database_Manager/database.schemas.ts
 // ═══════════════════════════════════════════════════════════════
 // Unified schemas — Patients, Queue, Appointments, Tenants, etc.
+// PostgreSQL dialect (was SQLite) — INTEGER PRIMARY KEY AUTOINCREMENT
+// becomes SERIAL PRIMARY KEY; SQLite's per-column COLLATE NOCASE becomes
+// the CITEXT type (case-insensitive text) on custom_options.
 // ═══════════════════════════════════════════════════════════════
 
 // ─── PATIENT SCHEMA ───────────────────────────────────────────
 export const PATIENT_SCHEMA = `
   CREATE TABLE IF NOT EXISTS patients (
-    id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id                          SERIAL PRIMARY KEY,
     patient_id                  TEXT UNIQUE,
     full_name                   TEXT NOT NULL,
     mobile                      TEXT,
@@ -48,7 +51,7 @@ export const PATIENT_SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_patients_created_at ON patients(created_at DESC);
 
   CREATE TABLE IF NOT EXISTS patient_visits (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
     queue_entry_id INTEGER,
     visit_date TEXT NOT NULL,
@@ -68,7 +71,7 @@ export const PATIENT_SCHEMA = `
 // ─── QUEUE SCHEMA (replaces both old definitions) ────────────
 export const QUEUE_SCHEMA = `
   CREATE TABLE IF NOT EXISTS queue_entries (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    id                SERIAL PRIMARY KEY,
     patient_id        INTEGER,
     patient_name      TEXT NOT NULL,
     mobile            TEXT,
@@ -101,7 +104,7 @@ export const QUEUE_SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_queue_patient  ON queue_entries(patient_id);
 
   CREATE TABLE IF NOT EXISTS appointments (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    id                SERIAL PRIMARY KEY,
     patient_id        INTEGER,
     patient_name      TEXT NOT NULL,
     mobile            TEXT,
@@ -122,7 +125,7 @@ export const QUEUE_SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_appts_status   ON appointments(status);
 
   CREATE TABLE IF NOT EXISTS sms_logs (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    id                SERIAL PRIMARY KEY,
     queue_entry_id    INTEGER,
     mobile            TEXT NOT NULL,
     message           TEXT NOT NULL,
@@ -134,7 +137,7 @@ export const QUEUE_SCHEMA = `
 // ─── OPD SCHEMA ───────────────────────────────────────────────
 export const OPD_SCHEMA = `
   CREATE TABLE IF NOT EXISTS opd_records (
-    id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+    id                        SERIAL PRIMARY KEY,
     patient_id                INTEGER,
     queue_entry_id            INTEGER,
     appointment_id            INTEGER,
@@ -171,12 +174,14 @@ export const OPD_SCHEMA = `
   -- values are scoped to the investigation type they were entered under —
   -- X-Ray → "Right Knee" shouldn't suggest itself under CBC); '' means global.
   -- (Empty string, not NULL, so the UNIQUE constraint actually dedupes global rows —
-  -- SQLite treats every NULL as distinct from every other NULL.)
+  -- Postgres, like SQLite, treats every NULL as distinct from every other NULL.)
+  -- CITEXT (requires the citext extension, created automatically on first connect)
+  -- gives case-insensitive comparison/uniqueness, replacing SQLite's COLLATE NOCASE.
   CREATE TABLE IF NOT EXISTS custom_options (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          SERIAL PRIMARY KEY,
     category    TEXT NOT NULL,
-    context     TEXT NOT NULL DEFAULT '' COLLATE NOCASE,
-    value       TEXT NOT NULL COLLATE NOCASE,
+    context     CITEXT NOT NULL DEFAULT '',
+    value       CITEXT NOT NULL,
     created_at  TEXT NOT NULL,
     UNIQUE(category, context, value)
   );
@@ -185,7 +190,7 @@ export const OPD_SCHEMA = `
 // ─── TENANT SCHEMA ────────────────────────────────────────────
 export const TENANT_SCHEMA = `
   CREATE TABLE IF NOT EXISTS tenants (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          SERIAL PRIMARY KEY,
     tenant_id   TEXT UNIQUE NOT NULL,
     name        TEXT NOT NULL,
     type        TEXT DEFAULT 'clinic',
@@ -198,7 +203,7 @@ export const TENANT_SCHEMA = `
   );
 
   CREATE TABLE IF NOT EXISTS tenant_locations (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          SERIAL PRIMARY KEY,
     tenant_id   TEXT NOT NULL REFERENCES tenants(tenant_id),
     name        TEXT NOT NULL,
     address     TEXT,
@@ -211,7 +216,7 @@ export const TENANT_SCHEMA = `
 // ─── STAFF SCHEMA ─────────────────────────────────────────────
 export const STAFF_SCHEMA = `
   CREATE TABLE IF NOT EXISTS staff (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          SERIAL PRIMARY KEY,
     tenant_id   TEXT NOT NULL,
     name        TEXT NOT NULL,
     role        TEXT DEFAULT 'staff',
@@ -223,7 +228,7 @@ export const STAFF_SCHEMA = `
   );
 
   CREATE TABLE IF NOT EXISTS staff_sessions (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          SERIAL PRIMARY KEY,
     staff_id    INTEGER NOT NULL REFERENCES staff(id),
     tenant_id   TEXT NOT NULL,
     service_id  INTEGER,
@@ -239,7 +244,7 @@ export const STAFF_SCHEMA = `
 // ─── ANALYTICS SCHEMA ─────────────────────────────────────────
 export const ANALYTICS_SCHEMA = `
   CREATE TABLE IF NOT EXISTS analytics_events (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          SERIAL PRIMARY KEY,
     tenant_id   TEXT NOT NULL,
     event_type  TEXT NOT NULL,
     ticket_id   INTEGER,

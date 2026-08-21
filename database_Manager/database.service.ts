@@ -1,93 +1,120 @@
 // backend/database-manager/database.service.ts
 // ═══════════════════════════════════════════════════════════════════════════
-// DYNAMIC DATABASE SERVICE v3.0 - All-in-One Production Solution
-// Use anywhere with any schema dynamically
+// DYNAMIC DATABASE SERVICE v4.0 - PostgreSQL edition
+// Same public API as the old better-sqlite3 version, now backed by a single
+// shared Postgres connection pool. Every method is async (Postgres is a
+// network round-trip, unlike the old synchronous SQLite file access), and
+// every WHERE/VALUES clause is still authored with '?' placeholders — this
+// class converts them to Postgres's '$1, $2, ...' style internally, so call
+// sites elsewhere in the app didn't need their SQL strings rewritten.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import Database from 'better-sqlite3';
-import * as fs from 'fs';
-import * as path from 'path';
-// import * as path from 'path';
-// ═══════════════════════════════════════════════════════════════════════════
-// CONFIGURATION
-// ═══════════════════════════════════════════════════════════════════════════
-const DEFAULT_CONFIG = {
-  // NEW: store under backend/database_Manager/databases
-  databasesDir: path.resolve(__dirname, 'databases'),
-  backupPath: path.resolve(__dirname, 'backups'),
-  backupTime: { hour: 3, minute: 0 },
+import { Pool, PoolClient, types } from 'pg';
+import { AsyncLocalStorage } from 'async_hooks';
 
-  pragmas: {
-    journal_mode: 'WAL',
-    synchronous: 'NORMAL',
-    foreign_keys: 'ON',
-    cache_size: -16000, // 16MB
-    temp_store: 'FILE',
-    mmap_size: 10000000000,
-  },
+// node-postgres returns BIGINT/NUMERIC as strings by default (avoids silent
+// precision loss on huge values) — but every COUNT(*)/SUM(...) in this app's
+// SQL gets used in plain JS arithmetic (e.g. `a + b`), where a string result
+// would silently concatenate instead of add ("1" + "0" === "10", not 1).
+// This app's numbers are well within JS's safe integer range, so parsing them
+// as regular numbers here is safe and matches how better-sqlite3 behaved.
+types.setTypeParser(20, (val: string) => parseInt(val, 10));   // int8/bigint (COUNT)
+types.setTypeParser(1700, (val: string) => parseFloat(val));   // numeric (SUM)
 
-  maxDbSizeMB: 2000,
-  minDeleteDays: 30,
-  slowQueryThresholdMs: 100,
-};
+const SLOW_QUERY_THRESHOLD_MS = 100;
 
-// ═══════════════════════════════════════════════════════════════════════════
-// DYNAMIC DATABASE SERVICE
-// ═══════════════════════════════════════════════════════════════════════════
+// Tracks the active transaction client (if any) for the current async call
+// chain, so nested insert/update/delete/select calls made inside a
+// transaction() callback automatically run on that same client instead of
+// grabbing a fresh connection from the pool.
+const txStorage = new AsyncLocalStorage<PoolClient>();
+
+// Converts '?' placeholders to Postgres '$1, $2, ...', skipping any '?' that
+// appears inside a single-quoted string literal (so a literal question mark
+// in application data/SQL text is never mistaken for a placeholder).
+function toPgPlaceholders(sql: string): string {
+  let out = '';
+  let inString = false;
+  let paramIndex = 0;
+  for (let i = 0; i < sql.length; i++) {
+    const ch = sql[i];
+    if (ch === "'") {
+      inString = !inString;
+      out += ch;
+    } else if (ch === '?' && !inString) {
+      paramIndex++;
+      out += `$${paramIndex}`;
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
 class DynamicDatabaseService {
   private static instances: Map<string, DynamicDatabaseService> = new Map();
-  private db: Database.Database;
-  private dbPath: string;
+  private static pool: Pool;
   private dbName: string;
-  private backupTimer: NodeJS.Timeout | null = null;
+  // Resolves once this instance's schema + migrations have finished running —
+  // every public method awaits this first, so callers never need to await
+  // getDatabase() itself (it stays synchronous, matching how every route file
+  // already calls it once at module load time).
+  private ready: Promise<void>;
 
   private constructor(dbName: string, schema?: string) {
     this.dbName = dbName;
+    this.ready = this.init(schema);
+  }
 
-    // console.log(`\n🔧 Initializing ${dbName} database...\n`);
-
-    // Create databases directory
-    if (!fs.existsSync(DEFAULT_CONFIG.databasesDir)) {
-      fs.mkdirSync(DEFAULT_CONFIG.databasesDir, { recursive: true });
+  private static getPool(): Pool {
+    if (!DynamicDatabaseService.pool) {
+      const connectionString = process.env.DATABASE_URL;
+      if (!connectionString) {
+        throw new Error('DATABASE_URL is not set — add it to your .env file (see .env.example)');
+      }
+      DynamicDatabaseService.pool = new Pool({ connectionString });
+      DynamicDatabaseService.pool.on('error', err => {
+        console.error('❌ Postgres pool error (idle client):', err.message);
+      });
+      console.log('✅ Postgres connection pool created');
     }
+    return DynamicDatabaseService.pool;
+  }
 
-    // Database path
-    this.dbPath = path.join(DEFAULT_CONFIG.databasesDir, `${dbName}.db`);
-
-    // Connect
-    // this.db = new Database(this.dbPath, {
-    //   verbose: process.env.NODE_ENV === 'development' ? console.log : undefined,
-    // });
-    // ✅ FIX — remove verbose entirely
-    this.db = new Database(this.dbPath);
-
-    console.log(`✅ Connected: ${this.dbPath}`);
-
-    // Encryption (optional)
-    if (process.env.DB_ENCRYPTION_KEY) {
-      this.db.pragma(`key = '${process.env.DB_ENCRYPTION_KEY}'`);
-      console.log('🔒 Encryption enabled');
+  // Ensures 'CREATE EXTENSION' runs exactly once per process, even though
+  // multiple DynamicDatabaseService instances initialize concurrently at
+  // import time — without this, two concurrent "IF NOT EXISTS" statements can
+  // still race and violate Postgres's internal pg_extension unique index.
+  private static citextReady: Promise<void> | null = null;
+  private static ensureCitext(pool: Pool): Promise<void> {
+    if (!DynamicDatabaseService.citextReady) {
+      DynamicDatabaseService.citextReady = pool.query('CREATE EXTENSION IF NOT EXISTS citext').then(() => {});
     }
+    return DynamicDatabaseService.citextReady;
+  }
 
-    this.configurePragmas();
-
-    // Initialize schema if provided
-    if (schema) {
-      this.initializeSchema(schema);
-      this.runMigrations();
+  private async init(schema?: string): Promise<void> {
+    const pool = DynamicDatabaseService.getPool();
+    try {
+      await DynamicDatabaseService.ensureCitext(pool);
+      if (schema) {
+        await pool.query(schema);
+        console.log(`✅ ${this.dbName}: schema initialized`);
+      }
+      await this.runMigrations(pool);
+      console.log(`✅ ${this.dbName} ready`);
+    } catch (error: any) {
+      console.error(`❌ ${this.dbName}: initialization failed:`, error.message);
+      throw error;
     }
-
-    this.setupSmartBackup();
-    this.checkDatabaseSize();
-
-    console.log(`✅ ${dbName} ready (FAST mode)\n`);
   }
 
   /**
-   * Get or create datinitializeSchemaabase instance
-   * @param dbName - Database name (without .db extension)
-   * @param schema - Optional SQL schema (only used on first creation)
-   * @returns Database instance
+   * Get or create a database "namespace" — all namespaces share the single
+   * underlying Postgres database/pool; this just tracks which schema/
+   * migrations have already run for that group of tables.
+   * @param dbName - Logical namespace (was a separate SQLite file before)
+   * @param schema - Optional SQL schema (only run once, on first creation)
    */
   public static getDatabase(dbName: string, schema?: string): DynamicDatabaseService {
     if (!DynamicDatabaseService.instances.has(dbName)) {
@@ -97,114 +124,68 @@ class DynamicDatabaseService {
   }
 
   /**
-   * Close all open databases
+   * Close the shared pool (call once, on process shutdown).
    */
-  public static closeAll(): void {
-    console.log('🛑 Closing all databases...');
-    DynamicDatabaseService.instances.forEach((db, name) => {
-      console.log(`  - Closing ${name}...`);
-      db.close();
-    });
+  public static async closeAll(): Promise<void> {
+    console.log('🛑 Closing database pool...');
     DynamicDatabaseService.instances.clear();
-    console.log('✅ All databases closed');
-  }
-
-  private configurePragmas(): void {
-    Object.entries(DEFAULT_CONFIG.pragmas).forEach(([key, value]) => {
-      this.db.pragma(`${key} = ${value}`);
-    });
-    console.log('✅ Pragmas configured');
-  }
-
-  private initializeSchema(schema: string): void {
-    try {
-      this.db.exec(schema);
-      console.log('✅ Schema initialized');
-    } catch (error) {
-      console.error('❌ Schema initialization failed:', error);
-      throw error;
+    if (DynamicDatabaseService.pool) {
+      await DynamicDatabaseService.pool.end();
     }
+    console.log('✅ Database pool closed');
   }
 
-  private runMigrations(): void {
+  // Column-existence-driven migrations, same idea as before but against
+  // Postgres's information_schema instead of SQLite's PRAGMA table_info.
+  private async runMigrations(pool: Pool): Promise<void> {
     try {
-      const tableExists = this.db.prepare(
-        `SELECT name FROM sqlite_master WHERE type='table' AND name='patient_visits'`
-      ).get();
-      if (tableExists) {
-        const cols = this.db.prepare(`PRAGMA table_info(patient_visits)`).all() as any[];
-        if (!cols.some(c => c.name === 'queue_entry_id')) {
-          this.db.exec(`ALTER TABLE patient_visits ADD COLUMN queue_entry_id INTEGER`);
+      const columnExists = async (table: string, column: string): Promise<boolean> => {
+        const res = await pool.query(
+          `SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = $2`,
+          [table, column]
+        );
+        return (res.rowCount ?? 0) > 0;
+      };
+      const tableExists = async (table: string): Promise<boolean> => {
+        const res = await pool.query(
+          `SELECT 1 FROM information_schema.tables WHERE table_name = $1`,
+          [table]
+        );
+        return (res.rowCount ?? 0) > 0;
+      };
+
+      if (await tableExists('patient_visits')) {
+        if (!(await columnExists('patient_visits', 'queue_entry_id'))) {
+          await pool.query(`ALTER TABLE patient_visits ADD COLUMN queue_entry_id INTEGER`);
           console.log(`✅ ${this.dbName}: Migration applied — queue_entry_id added to patient_visits`);
         }
-        // Column is guaranteed to exist above (either pre-existing or just added) —
-        // safe to (re)create the index unconditionally, on both fresh and upgraded DBs.
-        this.db.exec(`CREATE INDEX IF NOT EXISTS idx_visits_queue_entry ON patient_visits(queue_entry_id)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_visits_queue_entry ON patient_visits(queue_entry_id)`);
       }
 
-      const opdExists = this.db.prepare(
-        `SELECT name FROM sqlite_master WHERE type='table' AND name='opd_records'`
-      ).get();
-      if (opdExists) {
-        const opdCols = this.db.prepare(`PRAGMA table_info(opd_records)`).all() as any[];
-        ['medicines', 'advice', 'investigations', 'vitals'].forEach(col => {
-          if (!opdCols.some(c => c.name === col)) {
-            this.db.exec(`ALTER TABLE opd_records ADD COLUMN ${col} TEXT`);
+      if (await tableExists('opd_records')) {
+        for (const col of ['medicines', 'advice', 'investigations', 'vitals']) {
+          if (!(await columnExists('opd_records', col))) {
+            await pool.query(`ALTER TABLE opd_records ADD COLUMN ${col} TEXT`);
             console.log(`✅ ${this.dbName}: Migration applied — ${col} added to opd_records`);
           }
-        });
+        }
       }
 
-      const queueExists = this.db.prepare(
-        `SELECT name FROM sqlite_master WHERE type='table' AND name='queue_entries'`
-      ).get();
-      if (queueExists) {
-        const queueCols = this.db.prepare(`PRAGMA table_info(queue_entries)`).all() as any[];
-        ['hold_reason', 'hold_at'].forEach(col => {
-          if (!queueCols.some(c => c.name === col)) {
-            this.db.exec(`ALTER TABLE queue_entries ADD COLUMN ${col} TEXT`);
+      if (await tableExists('queue_entries')) {
+        for (const col of ['hold_reason', 'hold_at']) {
+          if (!(await columnExists('queue_entries', col))) {
+            await pool.query(`ALTER TABLE queue_entries ADD COLUMN ${col} TEXT`);
             console.log(`✅ ${this.dbName}: Migration applied — ${col} added to queue_entries`);
           }
-        });
+        }
       }
 
-      const patientsExists = this.db.prepare(
-        `SELECT name FROM sqlite_master WHERE type='table' AND name='patients'`
-      ).get();
-      if (patientsExists) {
-        const patientCols = this.db.prepare(`PRAGMA table_info(patients)`).all() as any[];
-        ['affected_area', 'injury_history', 'previous_surgeries', 'mobility_status'].forEach(col => {
-          if (!patientCols.some(c => c.name === col)) {
-            this.db.exec(`ALTER TABLE patients ADD COLUMN ${col} TEXT`);
+      if (await tableExists('patients')) {
+        for (const col of ['affected_area', 'injury_history', 'previous_surgeries', 'mobility_status']) {
+          if (!(await columnExists('patients', col))) {
+            await pool.query(`ALTER TABLE patients ADD COLUMN ${col} TEXT`);
             console.log(`✅ ${this.dbName}: Migration applied — ${col} added to patients`);
           }
-        });
-      }
-
-      // custom_options originally had no 'context' column (UNIQUE(category, value) only).
-      // SQLite can't add a column into an existing UNIQUE constraint via ALTER TABLE, so
-      // rebuild the table — preserving existing rows as global (context = '') entries.
-      const customOptExists = this.db.prepare(
-        `SELECT name FROM sqlite_master WHERE type='table' AND name='custom_options'`
-      ).get();
-      if (customOptExists) {
-        const customOptCols = this.db.prepare(`PRAGMA table_info(custom_options)`).all() as any[];
-        if (!customOptCols.some(c => c.name === 'context')) {
-          this.db.exec(`
-            ALTER TABLE custom_options RENAME TO custom_options_old;
-            CREATE TABLE custom_options (
-              id          INTEGER PRIMARY KEY AUTOINCREMENT,
-              category    TEXT NOT NULL,
-              context     TEXT NOT NULL DEFAULT '' COLLATE NOCASE,
-              value       TEXT NOT NULL COLLATE NOCASE,
-              created_at  TEXT NOT NULL,
-              UNIQUE(category, context, value)
-            );
-            INSERT OR IGNORE INTO custom_options (category, context, value, created_at)
-              SELECT category, '', value, created_at FROM custom_options_old;
-            DROP TABLE custom_options_old;
-          `);
-          console.log(`✅ ${this.dbName}: Migration applied — custom_options rebuilt with 'context' column`);
         }
       }
     } catch (error: any) {
@@ -212,35 +193,16 @@ class DynamicDatabaseService {
     }
   }
 
-
-  private setupSmartBackup(): void {
-    this.backupTimer = setInterval(() => {
-      const now = new Date();
-      if (now.getHours() === DEFAULT_CONFIG.backupTime.hour && now.getMinutes() === DEFAULT_CONFIG.backupTime.minute) {
-        this.backupSafe().catch(err => console.error('❌ Auto-backup failed:', err));
-      }
-    }, 60000);
-  }
-
-  private checkDatabaseSize(): void {
-    try {
-      const stats = fs.statSync(this.dbPath);
-      const sizeMB = stats.size / 1024 / 1024;
-
-      if (sizeMB > DEFAULT_CONFIG.maxDbSizeMB) {
-        console.error(`🚨 ${this.dbName} size: ${sizeMB.toFixed(2)}MB - Archive!`);
-      } else if (sizeMB > DEFAULT_CONFIG.maxDbSizeMB / 2) {
-        console.warn(`⚠️ ${this.dbName} size: ${sizeMB.toFixed(2)}MB`);
-      }
-    } catch (error) {
-      // Ignore if file doesn't exist yet
-    }
-  }
-
   private logSlowQuery(queryName: string, duration: number): void {
-    if (duration > DEFAULT_CONFIG.slowQueryThresholdMs) {
+    if (duration > SLOW_QUERY_THRESHOLD_MS) {
       console.warn(`🐌 ${this.dbName}.${queryName} (${duration}ms)`);
     }
+  }
+
+  // Runs on the active transaction client if one is set for this async
+  // context (see transaction()), otherwise on the shared pool.
+  private getExecutor(): Pool | PoolClient {
+    return txStorage.getStore() ?? DynamicDatabaseService.getPool();
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -249,26 +211,21 @@ class DynamicDatabaseService {
 
   /**
    * Insert record dynamically
-   * @param tableName - Table name
-   * @param data - Object with column:value pairs
-   * @returns Insert ID
+   * @returns The new row's id
    */
-  public insert(tableName: string, data: Record<string, any>): number {
+  public async insert(tableName: string, data: Record<string, any>): Promise<number> {
+    await this.ready;
     const startTime = Date.now();
     try {
       const columns = Object.keys(data);
-      const placeholders = columns.map(() => '?').join(', ');
+      const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
       const values = Object.values(data);
 
-      const sql = `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
-      const stmt = this.db.prepare(sql);
-      const info = stmt.run(...values);
+      const sql = `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders}) RETURNING id`;
+      const result = await this.getExecutor().query(sql, values);
 
-      const duration = Date.now() - startTime;
-      this.logSlowQuery(`insert(${tableName})`, duration);
-
-      // console.log(`💾 ${this.dbName}.${tableName}: Inserted row ID ${info.lastInsertRowid} (${duration}ms)`);
-      return info.lastInsertRowid as number;
+      this.logSlowQuery(`insert(${tableName})`, Date.now() - startTime);
+      return result.rows[0].id;
     } catch (error: any) {
       console.error(`❌ ${this.dbName}.insert(${tableName}) failed:`, error.message);
       throw error;
@@ -277,27 +234,23 @@ class DynamicDatabaseService {
 
   /**
    * Update record dynamically
-   * @param tableName - Table name
-   * @param data - Object with column:value pairs to update
    * @param where - WHERE condition (e.g., 'id = ?')
-   * @param whereParams - Parameters for WHERE condition
    * @returns Number of rows updated
    */
-  public update(tableName: string, data: Record<string, any>, where: string, whereParams: any[]): number {
+  public async update(tableName: string, data: Record<string, any>, where: string, whereParams: any[]): Promise<number> {
+    await this.ready;
     const startTime = Date.now();
     try {
-      const setClause = Object.keys(data).map(key => `${key} = ?`).join(', ');
+      const dataKeys = Object.keys(data);
+      const setClause = dataKeys.map((key, i) => `${key} = $${i + 1}`).join(', ');
+      const shiftedWhere = toPgPlaceholders(where).replace(/\$(\d+)/g, (_, n) => `$${Number(n) + dataKeys.length}`);
       const values = [...Object.values(data), ...whereParams];
 
-      const sql = `UPDATE ${tableName} SET ${setClause} WHERE ${where}`;
-      const stmt = this.db.prepare(sql);
-      const info = stmt.run(...values);
+      const sql = `UPDATE ${tableName} SET ${setClause} WHERE ${shiftedWhere}`;
+      const result = await this.getExecutor().query(sql, values);
 
-      const duration = Date.now() - startTime;
-      this.logSlowQuery(`update(${tableName})`, duration);
-
-      // console.log(`✏️ ${this.dbName}.${tableName}: Updated ${info.changes} rows (${duration}ms)`);
-      return info.changes;
+      this.logSlowQuery(`update(${tableName})`, Date.now() - startTime);
+      return result.rowCount ?? 0;
     } catch (error: any) {
       console.error(`❌ ${this.dbName}.update(${tableName}) failed:`, error.message);
       throw error;
@@ -306,26 +259,18 @@ class DynamicDatabaseService {
 
   /**
    * Select records dynamically
-   * @param tableName - Table name
-   * @param where - Optional WHERE condition
-   * @param whereParams - Optional WHERE parameters
-   * @param limit - Optional limit
-   * @returns Array of records
    */
-  public select(tableName: string, where?: string, whereParams?: any[], limit?: number): any[] {
+  public async select(tableName: string, where?: string, whereParams?: any[], limit?: number): Promise<any[]> {
+    await this.ready;
     const startTime = Date.now();
     try {
       let sql = `SELECT * FROM ${tableName}`;
-      if (where) sql += ` WHERE ${where}`;
+      if (where) sql += ` WHERE ${toPgPlaceholders(where)}`;
       if (limit) sql += ` LIMIT ${limit}`;
 
-      const stmt = this.db.prepare(sql);
-      const rows = whereParams ? stmt.all(...whereParams) : stmt.all();
-
-      const duration = Date.now() - startTime;
-      this.logSlowQuery(`select(${tableName})`, duration);
-
-      return rows as any[];
+      const result = await this.getExecutor().query(sql, whereParams || []);
+      this.logSlowQuery(`select(${tableName})`, Date.now() - startTime);
+      return result.rows;
     } catch (error: any) {
       console.error(`❌ ${this.dbName}.select(${tableName}) failed:`, error.message);
       return [];
@@ -334,22 +279,16 @@ class DynamicDatabaseService {
 
   /**
    * Select one record dynamically
-   * @param tableName - Table name
-   * @param where - WHERE condition
-   * @param whereParams - WHERE parameters
-   * @returns Single record or null
    */
-  public selectOne(tableName: string, where: string, whereParams: any[]): any | null {
+  public async selectOne(tableName: string, where: string, whereParams: any[]): Promise<any | null> {
+    await this.ready;
     const startTime = Date.now();
     try {
-      const sql = `SELECT * FROM ${tableName} WHERE ${where} LIMIT 1`;
-      const stmt = this.db.prepare(sql);
-      const row = stmt.get(...whereParams);
+      const sql = `SELECT * FROM ${tableName} WHERE ${toPgPlaceholders(where)} LIMIT 1`;
+      const result = await this.getExecutor().query(sql, whereParams);
 
-      const duration = Date.now() - startTime;
-      this.logSlowQuery(`selectOne(${tableName})`, duration);
-
-      return row || null;
+      this.logSlowQuery(`selectOne(${tableName})`, Date.now() - startTime);
+      return result.rows[0] || null;
     } catch (error: any) {
       console.error(`❌ ${this.dbName}.selectOne(${tableName}) failed:`, error.message);
       return null;
@@ -358,23 +297,17 @@ class DynamicDatabaseService {
 
   /**
    * Delete records dynamically
-   * @param tableName - Table name
-   * @param where - WHERE condition
-   * @param whereParams - WHERE parameters
    * @returns Number of deleted rows
    */
-  public delete(tableName: string, where: string, whereParams: any[]): number {
+  public async delete(tableName: string, where: string, whereParams: any[]): Promise<number> {
+    await this.ready;
     const startTime = Date.now();
     try {
-      const sql = `DELETE FROM ${tableName} WHERE ${where}`;
-      const stmt = this.db.prepare(sql);
-      const info = stmt.run(...whereParams);
+      const sql = `DELETE FROM ${tableName} WHERE ${toPgPlaceholders(where)}`;
+      const result = await this.getExecutor().query(sql, whereParams);
 
-      const duration = Date.now() - startTime;
-      this.logSlowQuery(`delete(${tableName})`, duration);
-
-      // console.log(`🗑️  ${this.dbName}.${tableName}: Deleted ${info.changes} rows (${duration}ms)`);
-      return info.changes;
+      this.logSlowQuery(`delete(${tableName})`, Date.now() - startTime);
+      return result.rowCount ?? 0;
     } catch (error: any) {
       console.error(`❌ ${this.dbName}.delete(${tableName}) failed:`, error.message);
       throw error;
@@ -382,21 +315,15 @@ class DynamicDatabaseService {
   }
 
   /**
-   * Execute raw SQL query
-   * @param sql - SQL query
-   * @param params - Optional parameters
-   * @returns Query result
+   * Execute a raw SELECT-style query, written with '?' placeholders.
    */
-  public query(sql: string, params?: any[]): any {
+  public async query(sql: string, params?: any[]): Promise<any[]> {
+    await this.ready;
     const startTime = Date.now();
     try {
-      const stmt = this.db.prepare(sql);
-      const result = params ? stmt.all(...params) : stmt.all();
-
-      const duration = Date.now() - startTime;
-      this.logSlowQuery('query(custom)', duration);
-
-      return result;
+      const result = await this.getExecutor().query(toPgPlaceholders(sql), params || []);
+      this.logSlowQuery('query(custom)', Date.now() - startTime);
+      return result.rows;
     } catch (error: any) {
       console.error(`❌ ${this.dbName}.query() failed:`, error.message);
       throw error;
@@ -404,21 +331,16 @@ class DynamicDatabaseService {
   }
 
   /**
-   * Execute raw SQL (for INSERT/UPDATE/DELETE)
-   * @param sql - SQL statement
-   * @param params - Optional parameters
-   * @returns Statement info
+   * Execute raw SQL (for INSERT/UPDATE/DELETE), written with '?' placeholders.
+   * @returns { rowCount, rows } — the Postgres result shape.
    */
-  public exec(sql: string, params?: any[]): Database.RunResult {
+  public async exec(sql: string, params?: any[]): Promise<{ rowCount: number | null; rows: any[] }> {
+    await this.ready;
     const startTime = Date.now();
     try {
-      const stmt = this.db.prepare(sql);
-      const info = params ? stmt.run(...params) : stmt.run();
-
-      const duration = Date.now() - startTime;
-      this.logSlowQuery('exec(custom)', duration);
-
-      return info;
+      const result = await this.getExecutor().query(toPgPlaceholders(sql), params || []);
+      this.logSlowQuery('exec(custom)', Date.now() - startTime);
+      return { rowCount: result.rowCount, rows: result.rows };
     } catch (error: any) {
       console.error(`❌ ${this.dbName}.exec() failed:`, error.message);
       throw error;
@@ -426,13 +348,12 @@ class DynamicDatabaseService {
   }
 
   /**
-   * Create table dynamically
-   * @param tableName - Table name
-   * @param schema - SQL schema definition
+   * Create table dynamically (runs arbitrary DDL).
    */
-  public createTable(tableName: string, schema: string): void {
+  public async createTable(tableName: string, schema: string): Promise<void> {
+    await this.ready;
     try {
-      this.db.exec(schema);
+      await this.getExecutor().query(schema);
       console.log(`✅ ${this.dbName}: Table '${tableName}' created`);
     } catch (error: any) {
       console.error(`❌ ${this.dbName}.createTable(${tableName}) failed:`, error.message);
@@ -441,17 +362,14 @@ class DynamicDatabaseService {
   }
 
   /**
-   * Check if record exists
-   * @param tableName - Table name
-   * @param where - WHERE condition
-   * @param whereParams - WHERE parameters
-   * @returns True if exists
+   * Check if a record exists
    */
-  public exists(tableName: string, where: string, whereParams: any[]): boolean {
+  public async exists(tableName: string, where: string, whereParams: any[]): Promise<boolean> {
+    await this.ready;
     try {
-      const sql = `SELECT 1 FROM ${tableName} WHERE ${where} LIMIT 1`;
-      const stmt = this.db.prepare(sql);
-      return stmt.get(...whereParams) !== undefined;
+      const sql = `SELECT 1 FROM ${tableName} WHERE ${toPgPlaceholders(where)} LIMIT 1`;
+      const result = await this.getExecutor().query(sql, whereParams);
+      return (result.rowCount ?? 0) > 0;
     } catch (error: any) {
       console.error(`❌ ${this.dbName}.exists(${tableName}) failed:`, error.message);
       return false;
@@ -460,20 +378,15 @@ class DynamicDatabaseService {
 
   /**
    * Count records
-   * @param tableName - Table name
-   * @param where - Optional WHERE condition
-   * @param whereParams - Optional WHERE parameters
-   * @returns Count
    */
-  public count(tableName: string, where?: string, whereParams?: any[]): number {
+  public async count(tableName: string, where?: string, whereParams?: any[]): Promise<number> {
+    await this.ready;
     try {
       let sql = `SELECT COUNT(*) as count FROM ${tableName}`;
-      if (where) sql += ` WHERE ${where}`;
+      if (where) sql += ` WHERE ${toPgPlaceholders(where)}`;
 
-      const stmt = this.db.prepare(sql);
-      const result = whereParams ? stmt.get(...whereParams) : stmt.get();
-
-      return (result as any).count;
+      const result = await this.getExecutor().query(sql, whereParams || []);
+      return parseInt(result.rows[0].count, 10);
     } catch (error: any) {
       console.error(`❌ ${this.dbName}.count(${tableName}) failed:`, error.message);
       return 0;
@@ -481,166 +394,47 @@ class DynamicDatabaseService {
   }
 
   /**
-   * Atomic transaction
-   * @param callback - Transaction function
-   * @returns Result
+   * Atomic transaction — every insert/update/delete/select/query/exec call
+   * made (on any DynamicDatabaseService instance) inside the callback runs
+   * on the same client, wrapped in BEGIN/COMMIT, and rolls back on error.
    */
-  public transaction<T>(callback: () => T): T {
+  public async transaction<T>(callback: () => Promise<T>): Promise<T> {
+    await this.ready;
+    const client = await DynamicDatabaseService.getPool().connect();
     try {
-      return this.db.transaction(callback)();
+      await client.query('BEGIN');
+      const result = await txStorage.run(client, callback);
+      await client.query('COMMIT');
+      return result;
     } catch (error: any) {
+      await client.query('ROLLBACK').catch(() => {});
       console.error(`❌ ${this.dbName}.transaction() failed:`, error.message);
       throw error;
+    } finally {
+      client.release();
     }
   }
 
   /**
-   * Backup database (safe with verification)
+   * Close the shared pool. Safe to call on any instance.
    */
-  public async backupSafe(): Promise<string> {
-    try {
-      const checkpoint = this.db.pragma('wal_checkpoint(PASSIVE)', { simple: true });
-      if (checkpoint !== 0) {
-        console.log(`⚠️ ${this.dbName} busy, skipping backup`);
-        return '';
-      }
-
-      const backupDir = DEFAULT_CONFIG.backupPath;
-      if (!fs.existsSync(backupDir)) {
-        fs.mkdirSync(backupDir, { recursive: true });
-      }
-
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const backupPath = path.join(backupDir, `${this.dbName}-${timestamp}.db`);
-
-      this.db.backup(backupPath);
-
-      // Verify
-      const backupDb = new Database(backupPath, { readonly: true });
-      const integrity = backupDb.pragma('integrity_check', { simple: true });
-      backupDb.close();
-
-      if (integrity !== 'ok') {
-        fs.unlinkSync(backupPath);
-        throw new Error('Backup integrity failed');
-      }
-
-      console.log(`💾 ${this.dbName} backed up: ${backupPath}`);
-      return backupPath;
-    } catch (error: any) {
-      console.error(`❌ ${this.dbName} backup failed:`, error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * Backup database (simple)
-   */
-  public backup(): string {
-    try {
-      const backupDir = DEFAULT_CONFIG.backupPath;
-      if (!fs.existsSync(backupDir)) {
-        fs.mkdirSync(backupDir, { recursive: true });
-      }
-
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const backupPath = path.join(backupDir, `${this.dbName}-${timestamp}.db`);
-
-      this.db.backup(backupPath);
-
-      console.log(`💾 ${this.dbName} backed up: ${backupPath}`);
-      return backupPath;
-    } catch (error: any) {
-      console.error(`❌ ${this.dbName} backup failed:`, error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * Get database info
-   */
-  public getInfo(): any {
-    try {
-      const stats = fs.statSync(this.dbPath);
-      const tableCount = this.db.prepare('SELECT COUNT(*) as count FROM sqlite_master WHERE type="table"').get() as any;
-
-      return {
-        name: this.dbName,
-        path: this.dbPath,
-        file_size_mb: (stats.size / 1024 / 1024).toFixed(2),
-        total_tables: tableCount.count,
-        wal_enabled: this.db.pragma('journal_mode', { simple: true }) === 'wal',
-        sync_mode: this.db.pragma('synchronous', { simple: true }),
-        last_modified: stats.mtime,
-      };
-    } catch (error: any) {
-      console.error(`❌ ${this.dbName} getInfo() failed:`, error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * Check database integrity
-   */
-  public checkIntegrity(): string {
-    try {
-      const result = this.db.pragma('integrity_check', { simple: true });
-      console.log(`🔍 ${this.dbName} integrity: ${result}`);
-      return result as string;
-    } catch (error: any) {
-      console.error(`❌ ${this.dbName} integrity check failed:`, error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * Checkpoint WAL
-   */
-  public checkpointWAL(): void {
-    try {
-      this.db.pragma('wal_checkpoint(TRUNCATE)');
-      // console.log(`✅ ${this.dbName} WAL checkpoint completed`);
-    } catch (error: any) {
-      console.error(`❌ ${this.dbName} WAL checkpoint failed:`, error.message);
-    }
-  }
-
-  /**
-   * Close database
-   */
-  public close(): void {
-    try {
-      if (this.backupTimer) {
-        clearInterval(this.backupTimer);
-      }
-      this.checkpointWAL();
-      this.db.close();
-      console.log(`✅ ${this.dbName} closed`);
-    } catch (error: any) {
-      console.error(`❌ ${this.dbName} close failed:`, error.message);
-    }
-  }
-
-  /**
-   * Get raw database instance (for advanced usage)
-   */
-  public getDb(): Database.Database {
-    return this.db;
+  public async close(): Promise<void> {
+    await DynamicDatabaseService.closeAll();
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GRACEFUL SHUTDOWN
 // ═══════════════════════════════════════════════════════════════════════════
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('\n🛑 Shutting down gracefully (SIGINT)...');
-  DynamicDatabaseService.closeAll();
+  await DynamicDatabaseService.closeAll();
   process.exit(0);
 });
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   console.log('\n🛑 Shutting down gracefully (SIGTERM)...');
-  DynamicDatabaseService.closeAll();
+  await DynamicDatabaseService.closeAll();
   process.exit(0);
 });
 

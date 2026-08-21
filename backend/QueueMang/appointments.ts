@@ -9,10 +9,10 @@ const router = Router();
 const db = DynamicDatabaseService.getDatabase('queue', QUEUE_SCHEMA);
 
 // ─── GET appointments by date ─────────────────────────
-router.get('/', (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
     try {
         const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
-        const appointments = db.query(`
+        const appointments = await db.query(`
             SELECT * FROM appointments
             WHERE appt_date = ?
             ORDER BY slot_time ASC
@@ -24,11 +24,11 @@ router.get('/', (req: Request, res: Response) => {
 });
 
 // ─── GET appointments range (for calendar dots) ───────
-router.get('/range', (req: Request, res: Response) => {
+router.get('/range', async (req: Request, res: Response) => {
     try {
         const { from, to } = req.query;
         if (!from || !to) return res.status(400).json({ success: false, message: 'from and to required' });
-        const appointments = db.query(`
+        const appointments = await db.query(`
             SELECT appt_date, COUNT(*) as count
             FROM appointments
             WHERE appt_date BETWEEN ? AND ?
@@ -41,8 +41,7 @@ router.get('/range', (req: Request, res: Response) => {
 });
 
 // ─── POST: create appointment ─────────────────────────
-// ─── POST: create appointment ─────────────────────────
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
     try {
         const body = req.body;
         if (!body.patient_name?.trim()) {
@@ -56,10 +55,10 @@ router.post('/', (req: Request, res: Response) => {
         // so they appear in the Patients list just like a manually-added patient would.
         const patientId = body.patient_id
             ? parseInt(body.patient_id)
-            : findOrCreatePatient({ full_name: body.patient_name, mobile: body.mobile, visit_type: body.visit_type });
+            : await findOrCreatePatient({ full_name: body.patient_name, mobile: body.mobile, visit_type: body.visit_type });
 
         // ─── NEW: PREVENT DUPLICATE BOOKINGS ──────────────
-        const existing = db.selectOne('appointments', 'patient_id = ? AND appt_date = ?', [patientId, body.appt_date]);
+        const existing = await db.selectOne('appointments', 'patient_id = ? AND appt_date = ?', [patientId, body.appt_date]);
         if (existing) {
             return res.status(400).json({ success: false, message: 'Patient already booked an appointment for this date.' });
         }
@@ -83,7 +82,7 @@ router.post('/', (req: Request, res: Response) => {
             updated_at: now,
         };
 
-        const id = db.insert('appointments', data);
+        const id = await db.insert('appointments', data);
 
         // Send confirmation SMS
         if (body.mobile) {
@@ -91,7 +90,7 @@ router.post('/', (req: Request, res: Response) => {
 
             // Log it to your database
             try {
-                db.insert('sms_logs', {
+                await db.insert('sms_logs', {
                     queue_entry_id: null,
                     mobile: body.mobile,
                     message: msg,
@@ -119,11 +118,11 @@ router.post('/', (req: Request, res: Response) => {
 });
 
 // ─── PUT: update appointment ──────────────────────────
-router.put('/:id', (req: Request, res: Response) => {
+router.put('/:id', async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id as string, 10);
         const body = req.body;
-        const existing = db.selectOne('appointments', 'id = ?', [id]);
+        const existing = await db.selectOne('appointments', 'id = ?', [id]);
         if (!existing) return res.status(404).json({ success: false, message: 'Appointment not found' });
 
         const updates: Record<string, any> = { updated_at: new Date().toISOString() };
@@ -132,7 +131,7 @@ router.put('/:id', (req: Request, res: Response) => {
                 if (body[f] !== undefined) updates[f] = body[f] === '' ? null : body[f];
             });
 
-        db.update('appointments', updates, 'id = ?', [id]);
+        await db.update('appointments', updates, 'id = ?', [id]);
         res.json({ success: true, message: 'Appointment updated' });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });
@@ -140,12 +139,12 @@ router.put('/:id', (req: Request, res: Response) => {
 });
 
 // ─── DELETE: cancel appointment ───────────────────────
-router.delete('/:id', (req: Request, res: Response) => {
+router.delete('/:id', async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id as string, 10);
-        const existing = db.selectOne('appointments', 'id = ?', [id]);
+        const existing = await db.selectOne('appointments', 'id = ?', [id]);
         if (!existing) return res.status(404).json({ success: false, message: 'Not found' });
-        db.delete('appointments', 'id = ?', [id]);
+        await db.delete('appointments', 'id = ?', [id]);
         res.json({ success: true, message: 'Appointment cancelled' });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });

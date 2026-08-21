@@ -121,7 +121,6 @@ let state = {
   selectedCalDate: today(), // <--- This now works perfectly
   queueDate: today(), // The date the Live Queue is currently viewing/adding to
   apptSelectedDate: null,
-  selectedWalkinPatient: null,
   selectedApptPatient: null,
   filterStatus: '',
   filterType: '',
@@ -310,7 +309,7 @@ function initCombobox(input, getOptions) {
 // ─── Auto-growing textareas ─────────────────────────────
 // Every textarea grows with its content up to a cap, then scrolls internally —
 // this keeps a long note from pushing the modal's footer buttons off-screen.
-const TEXTAREA_MAX_HEIGHT = 180;
+const TEXTAREA_MAX_HEIGHT = 320;
 function autosizeTextarea(el) {
   el.style.height = 'auto';
   const target = Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT);
@@ -351,9 +350,9 @@ function startClock() {
 }
 
 // ─── LIVE QUEUE DATE NAVIGATION ────────────────────────
-// Lets the doctor/reception browse (and add walk-ins to) any date, not just
-// today — e.g. to check whether a patient's history from a past visit shows
-// up correctly on a later date, without relying on the system clock.
+// Lets the doctor/reception browse (and check patients into) any date, not
+// just today — e.g. to check whether a patient's history from a past visit
+// shows up correctly on a later date, without relying on the system clock.
 function shiftQueueDate(deltaDays) {
   const d = new Date(state.queueDate + 'T00:00:00');
   d.setDate(d.getDate() + deltaDays);
@@ -599,8 +598,20 @@ function queueCardHtml(q, i) {
     </button>`;
 
   const btnReopen = `
-    <button class="qbtn qbtn-call" style="background:#eff6ff; color:#2563eb;" data-action="complete" data-id="${q.id}" title="View Details / Book Follow-up">
+    <button class="qbtn qbtn-call" style="background:#eff6ff; color:#2563eb;" data-action="complete" data-id="${q.id}" title="Edit Outcome / Payment">
       <svg viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>`;
+
+  const btnViewOpd = `
+    <button class="qbtn qbtn-call" style="background:#f0fdf9; color:#0f766e;" data-action="view-opd" data-id="${q.id}" title="View OPD Record — what the doctor filled in">
+      <svg viewBox="0 0 18 18" fill="none"><path d="M9 3C5 3 2 9 2 9s3 6 7 6 7-6 7-6-3-6-7-6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="9" cy="9" r="2.2" stroke="currentColor" stroke-width="1.5"/></svg>
+    </button>`;
+
+  // Reopens the full editable OPD form — for adding/removing a medicine,
+  // investigation, or correcting the diagnosis after the visit was marked done.
+  const btnEditOpd = `
+    <button class="qbtn qbtn-call" style="background:#fef3e2; color:#b45309;" data-action="edit-opd" data-id="${q.id}" title="Edit OPD Record — add/remove diagnosis, medicines, investigations">
+      <svg viewBox="0 0 18 18" fill="none"><path d="M8 3H4a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 4 15h9a1.5 1.5 0 0 0 1.5-1.5V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.5 2.5a1.414 1.414 0 0 1 2 2L9 11l-2.5.5.5-2.5 6.5-6.5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>`;
 
   const btnResume = `
@@ -622,7 +633,10 @@ function queueCardHtml(q, i) {
   } else if (q.status === 'MISSED') {
     actions = btnRequeue + btnRemove;
   } else if (q.status === 'DONE' || q.status === 'NOSHOW') {
-    actions = btnReopen;
+    // btnReopen (Edit Outcome/Payment) intentionally omitted — clicking anywhere
+    // on the card itself already opens the same outcome/payment editor for a
+    // DONE/NOSHOW entry (see the card-level click handler), so the icon was redundant.
+    actions = btnViewOpd + btnEditOpd;
   }
 
   const priorityTag = q.priority !== 'NORMAL'
@@ -640,7 +654,7 @@ function queueCardHtml(q, i) {
   return `
     <div class="queue-card status-${q.status} priority-${q.priority}" data-id="${q.id}" style="animation-delay:${i * 15}ms">
       <div class="qtoken">
-        ${isAppt ? `<span class="ticket-type-badge appt-badge-chip">APT</span>` : `<span class="ticket-type-badge walk-badge-chip">WLK</span>`}
+        ${isAppt ? `<span class="ticket-type-badge appt-badge-chip">SCH</span>` : ''}
         <span class="qnum">#${q.token_number}</span>
       </div>
       <div class="qinfo">
@@ -718,7 +732,7 @@ function renderMiniCalendar() {
   // Label
   const sel = new Date(state.selectedCalDate + 'T00:00:00');
   const isToday2 = state.selectedCalDate === todayStr;
-  $('appt-date-label').textContent = isToday2 ? "Today's Appointments" :
+  $('appt-date-label').textContent = isToday2 ? "Today's Schedule" :
     sel.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
@@ -750,7 +764,7 @@ function renderAppointmentPanel() {
   $('appt-count-badge').textContent = appts.length;
 
   if (!appts.length) {
-    $('appt-list').innerHTML = `<div class="empty-appt">No appointments for this date.</div>`;
+    $('appt-list').innerHTML = `<div class="empty-appt">Nothing scheduled for this date.</div>`;
     return;
   }
 
@@ -859,13 +873,6 @@ function bindPatientSearch(inputId, resultsId, onSelect) {
 
 // ─── BIND EVENTS ───────────────────────────────────────
 function bindEvents() {
-  // Walk-in modal
-  $('open-walkin-btn').addEventListener('click', openWalkinModal);
-  $('close-walkin').addEventListener('click', () => closeModal('walkin-modal'));
-  $('cancel-walkin').addEventListener('click', () => closeModal('walkin-modal'));
-  $('walkin-modal').addEventListener('click', e => { if (e.target === $('walkin-modal')) closeModal('walkin-modal'); });
-  $('walkin-form').addEventListener('submit', handleWalkinSubmit);
-
   // Appointment modal
   $('open-appt-btn').addEventListener('click', openApptModal);
   $('close-appt').addEventListener('click', () => closeModal('appt-modal'));
@@ -877,6 +884,7 @@ function bindEvents() {
   $('close-serve').addEventListener('click', () => closeModal('serve-modal'));
   $('cancel-serve').addEventListener('click', () => closeModal('serve-modal'));
   $('serve-form').addEventListener('submit', handleServeSubmit);
+  $('serve-print-btn').addEventListener('click', handlePrintFromServeModal);
   $('opd-hold-btn').addEventListener('click', handleHoldVisit);
 
   // OPD modal
@@ -1024,6 +1032,18 @@ function bindEvents() {
       if (entry) openInvestModal(entry);
     }
 
+    // Lets staff/doctor see exactly what was filled in for a completed visit —
+    // diagnosis, prescription, investigations — without touching outcome/payment.
+    if (act === 'view-opd') viewOpdRecordByQueueId(id);
+
+    // Reopen the full OPD form (not just outcome/payment) so a completed
+    // visit's diagnosis/medicines/investigations can still be added to or
+    // corrected after the fact.
+    if (act === 'edit-opd') {
+      const entry = state.queue.find(q => q.id === id);
+      if (entry) { state.autoCallNext = false; openOpdModal(entry); }
+    }
+
     // ── UPGRADED: Small "No-show" button auto-advances without flickering
     if (act === 'noshow') {
       // 1. Turn on the memory flag BEFORE we process the no-show so the button stays blue
@@ -1062,20 +1082,6 @@ function bindEvents() {
   });
 
   // Patient search bindings
-  bindPatientSearch('walkin-patient-search', 'walkin-search-results', p => {
-    state.selectedWalkinPatient = p;
-    $('wf-patient-id').value = p.id;
-    $('wf-name').value = p.name;
-    $('wf-mobile').value = p.mobile || '';
-    $('selected-patient-chip').style.display = 'flex';
-    $('selected-patient-name').textContent = p.name;
-  });
-  $('clear-selected-patient').addEventListener('click', () => {
-    state.selectedWalkinPatient = null;
-    $('wf-patient-id').value = '';
-    $('selected-patient-chip').style.display = 'none';
-  });
-
   bindPatientSearch('appt-patient-search', 'appt-search-results', p => {
     state.selectedApptPatient = p;
     $('af-patient-id').value = p.id;
@@ -1117,7 +1123,7 @@ function bindEvents() {
       const entry = state.queue.find(q => q.id === queueId);
 
       if (!entry || !entry.patient_id) {
-        return toast('error', 'Cannot book: Patient ID is missing. Is this an unregistered walk-in?');
+        return toast('error', 'Cannot book: Patient ID is missing. Is this an unregistered patient?');
       }
 
       try {
@@ -1167,26 +1173,13 @@ function bindEvents() {
   // Keyboard
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      ['walkin-modal', 'appt-modal', 'serve-modal'].forEach(id => closeModal(id));
+      ['appt-modal', 'serve-modal'].forEach(id => closeModal(id));
       $('confirm-overlay').classList.remove('open');
     }
   });
 }
 
 // ─── OPEN MODALS ───────────────────────────────────────
-function openWalkinModal() {
-  $('walkin-form').reset();
-  $('wf-patient-id').value = '';
-  $('selected-patient-chip').style.display = 'none';
-  state.selectedWalkinPatient = null;
-  $('walkin-modal-sub').textContent = state.queueDate === today()
-    ? 'Search existing patient or enter quick details'
-    : `Adding to the queue for ${state.queueDate} — search existing patient or enter quick details`;
-  $('walkin-modal').classList.add('open');
-  setTimeout(() => $('wf-name').focus(), 100);
-  refreshAllTextareaSizes();
-}
-
 function openApptModal() {
   $('appt-form').reset();
   $('af-patient-id').value = '';
@@ -1448,7 +1441,14 @@ async function openOpdModal(entry) {
   addMedicineRow();
   clearInvestigationRows('opd-invest-list');
   addDefaultInvestigationRows('opd-invest-list');
-  $('opd-modal-sub').textContent = `History & prescription for ${entry.patient_name}`;
+  // Hold only makes sense for an active/ongoing visit — hide it when reopening
+  // an already-finished record so it can't accidentally un-complete a patient.
+  const isFinished = entry.status === 'DONE' || entry.status === 'NOSHOW';
+  $('opd-hold-btn').style.display = isFinished ? 'none' : '';
+
+  $('opd-modal-sub').textContent = isFinished
+    ? `Editing completed record for ${entry.patient_name}`
+    : `History & prescription for ${entry.patient_name}`;
   $('opd-newvisit-date').textContent = state.queueDate || today();
   $('opd-modal').classList.add('open');
   refreshAllTextareaSizes();
@@ -1942,9 +1942,12 @@ async function handleOpdInlineSubmit(e) {
   if (!payload) return;
 
   try {
+    const entry = state.queue.find(q => q.id === parseInt($('of2-queue-entry-id').value));
+    const alreadyDone = entry && (entry.status === 'DONE' || entry.status === 'NOSHOW');
+
     await saveOpdRecord(payload);
     await finishVisitAfterOpdSave(payload.follow_up_date);
-    toast('success', 'Visit completed — reception can now finalize payment');
+    toast('success', alreadyDone ? 'OPD record updated' : 'Visit completed — reception can now finalize payment');
     closeModal('opd-modal');
   } catch (err) {
     toast('error', err.message || 'Failed to save OPD record');
@@ -1965,6 +1968,29 @@ async function handleOpdPrint() {
   }
 }
 
+// Fetches the OPD record for a queue entry (from the queue list, e.g. a DONE
+// card) and opens it in the same read-only viewer used elsewhere — lets staff
+// see exactly what the doctor filled in for a completed visit at a glance.
+async function viewOpdRecordByQueueId(queueId) {
+  const entry = state.queue.find(q => q.id === queueId);
+  try {
+    const res = await fetch(`${OPD_API}?queue_entry_id=${queueId}`);
+    const data = await res.json();
+    const rec = (data.records || [])[0];
+    if (!rec) return toast('warning', 'No OPD record was saved for this visit');
+
+    // rec.age/gender are rarely filled at save time — fall back to the
+    // patient's profile so the viewer doesn't show a blank age/gender.
+    const pat = entry?.patient_id ? state.allPatients.find(p => String(p.id) === String(entry.patient_id)) : null;
+    if (!rec.age && pat?.age) rec.age = pat.age;
+    if (!rec.gender && pat?.gender) rec.gender = pat.gender;
+
+    viewOpdRecordPage(rec);
+  } catch (e) {
+    toast('error', 'Failed to load OPD record');
+  }
+}
+
 // Opens a past OPD record in the same clinic-letterhead page format used for
 // printing — but purely for viewing, with an on-page Print button instead of
 // auto-triggering the print dialog. Lets the doctor review an old visit exactly
@@ -1982,7 +2008,7 @@ function viewOpdRecordPage(rec) {
 // ─── Printable Prescription ───────────────────────────
 function printOpdRecord(rec, opts = {}) {
   const autoPrint = opts.autoPrint !== false;
-  const age = ($('opd-strip-age').textContent !== '—' ? $('opd-strip-age').textContent : '') || (rec.age ? `${rec.age}Y ${rec.gender || ''}`.trim() : '');
+  const age = (rec.age ? `${rec.age}Y ${rec.gender || ''}`.trim() : '') || ($('opd-strip-age').textContent !== '—' ? $('opd-strip-age').textContent : '');
   const opdNo = rec.id ? `OPD-${rec.id}` : '—';
   const medsHtml = (rec.medicines || []).length
     ? `<table class="rx-med-table">
@@ -2133,34 +2159,6 @@ async function injectAppointmentToQueue(appt) {
 }
 
 // ─── FORM HANDLERS ─────────────────────────────────────
-async function handleWalkinSubmit(e) {
-  e.preventDefault();
-  const name = $('wf-name').value.trim();
-  if (!name) { $('wf-name').classList.add('error'); $('wf-err-name').textContent = 'Name required'; return; }
-  $('wf-name').classList.remove('error');
-  $('wf-err-name').textContent = '';
-
-  const data = Object.fromEntries(new FormData($('walkin-form')));
-  Object.keys(data).forEach(k => { if (data[k] === '') delete data[k]; });
-  if ($('wf-patient-id').value) data.patient_id = $('wf-patient-id').value;
-
-  try {
-    const res = await fetch(QUEUE_API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...data, ticket_type: 'WALKIN', queue_date: state.queueDate }),
-    });
-    const result = await res.json();
-    if (result.success) {
-      toast('success', `✅ Token #${result.token_number} — ${name}`);
-      closeModal('walkin-modal');
-      await loadAll(true);
-    } else {
-      toast('error', result.message || 'Failed to add');
-    }
-  } catch { toast('error', 'Network error'); }
-}
-
 async function handleApptSubmit(e) {
   e.preventDefault();
   const name = $('af-name').value.trim();
@@ -2184,7 +2182,7 @@ async function handleApptSubmit(e) {
     });
     const result = await res.json();
     if (result.success) {
-      toast('success', `📅 Appointment booked for ${name}`);
+      toast('success', `📅 Schedule booked for ${name}`);
       closeModal('appt-modal');
       await loadAll(true);
     } else {
@@ -2206,6 +2204,32 @@ async function handleHoldVisit() {
   if (result?.success) {
     toast('success', `⏸ ${entry.patient_name} put on hold — will resume when back`);
     closeModal('opd-modal');
+  }
+}
+
+// Lets staff reprint the prescription straight from the outcome/payment editor
+// (the small pencil-icon modal on a DONE entry) without reopening the full OPD form.
+async function handlePrintFromServeModal() {
+  const queueId = parseInt($('sf-queue-id').value);
+  const entry = state.queue.find(q => q.id === queueId);
+  if (!entry) return;
+
+  try {
+    const res = await fetch(`${OPD_API}?queue_entry_id=${queueId}`);
+    const data = await res.json();
+    const rec = (data.records || [])[0];
+    if (!rec) return toast('warning', 'No OPD record saved for this visit yet');
+
+    let vitals = {};
+    try { vitals = rec.vitals ? JSON.parse(rec.vitals) : {}; } catch { vitals = {}; }
+    let medicines = [];
+    try { medicines = rec.medicines ? JSON.parse(rec.medicines) : []; } catch { medicines = []; }
+    let investigations = [];
+    try { investigations = rec.investigations ? JSON.parse(rec.investigations) : []; } catch { investigations = []; }
+
+    printOpdRecord({ ...rec, vitals, medicines, investigations });
+  } catch (e) {
+    toast('error', 'Failed to load record for printing');
   }
 }
 

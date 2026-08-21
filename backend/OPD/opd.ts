@@ -6,31 +6,22 @@ import { QUEUE_SCHEMA, OPD_SCHEMA } from '../../database_Manager/database.schema
 const router = Router();
 // Stored in the same 'queue' database file, alongside queue_entries/appointments.
 const db = DynamicDatabaseService.getDatabase('queue', QUEUE_SCHEMA);
-// Ensure opd_records exists even if 'queue' db was already initialized by queue.ts/appointments.ts first.
+// Ensure opd_records + custom_options exist even if 'queue' db was already
+// initialized by queue.ts/appointments.ts first. OPD_SCHEMA defines both tables.
 db.createTable('opd_records', OPD_SCHEMA);
-db.createTable('custom_options', `
-  CREATE TABLE IF NOT EXISTS custom_options (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    category    TEXT NOT NULL,
-    context     TEXT NOT NULL DEFAULT '' COLLATE NOCASE,
-    value       TEXT NOT NULL COLLATE NOCASE,
-    created_at  TEXT NOT NULL,
-    UNIQUE(category, context, value)
-  );
-`);
 
 // ─── Custom options (medicine/investigation field values typed by hand) ──
 // Remembered across patients so the next doctor sees them as a suggestion
 // instead of having to retype the same thing.
 // Flat categories (medicine name, medicine dose/frequency/duration/route/
 // instruction, investigation type) — no context, one global list per category.
-router.get('/options/:category', (req: Request, res: Response) => {
+router.get('/options/:category', async (req: Request, res: Response) => {
     try {
-        const rows = db.query(
-            `SELECT value FROM custom_options WHERE category = ? AND context = '' ORDER BY value COLLATE NOCASE`,
+        const rows = await db.query(
+            `SELECT value FROM custom_options WHERE category = ? AND context = '' ORDER BY value`,
             [req.params.category]
-        ) as any[];
-        res.json({ success: true, values: rows.map(r => r.value) });
+        );
+        res.json({ success: true, values: rows.map((r: any) => r.value) });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });
     }
@@ -40,28 +31,28 @@ router.get('/options/:category', (req: Request, res: Response) => {
 // investigation type they were entered under) — returns every context's list
 // at once as { "X-Ray": [...], "CBC": [...] } so the frontend doesn't need a
 // round-trip per row/type.
-router.get('/options/:category/by-context', (req: Request, res: Response) => {
+router.get('/options/:category/by-context', async (req: Request, res: Response) => {
     try {
-        const rows = db.query(
-            `SELECT context, value FROM custom_options WHERE category = ? AND context != '' ORDER BY value COLLATE NOCASE`,
+        const rows = await db.query(
+            `SELECT context, value FROM custom_options WHERE category = ? AND context != '' ORDER BY value`,
             [req.params.category]
-        ) as any[];
+        );
         const grouped: Record<string, string[]> = {};
-        rows.forEach(r => { (grouped[r.context] ||= []).push(r.value); });
+        rows.forEach((r: any) => { (grouped[r.context] ||= []).push(r.value); });
         res.json({ success: true, grouped });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });
     }
 });
 
-router.post('/options', (req: Request, res: Response) => {
+router.post('/options', async (req: Request, res: Response) => {
     try {
         const { category, value, context } = req.body;
         if (!category?.trim() || !value?.trim()) {
             return res.status(400).json({ success: false, message: 'category and value required' });
         }
-        db.exec(
-            `INSERT OR IGNORE INTO custom_options (category, context, value, created_at) VALUES (?, ?, ?, ?)`,
+        await db.exec(
+            `INSERT INTO custom_options (category, context, value, created_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING`,
             [category.trim(), context?.trim() || '', value.trim(), new Date().toISOString()]
         );
         res.status(201).json({ success: true });
@@ -71,7 +62,7 @@ router.post('/options', (req: Request, res: Response) => {
 });
 
 // ─── GET OPD records (by patient_id, queue_entry_id, or date) ─
-router.get('/', (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
     try {
         const { patient_id, queue_entry_id, date } = req.query;
         let where = '1=1';
@@ -81,7 +72,7 @@ router.get('/', (req: Request, res: Response) => {
         if (queue_entry_id) { where += ' AND queue_entry_id = ?'; params.push(queue_entry_id); }
         if (date) { where += ' AND visit_date = ?'; params.push(date); }
 
-        const records = db.select('opd_records', where, params);
+        const records = await db.select('opd_records', where, params);
         res.json({ success: true, records });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });
@@ -89,9 +80,9 @@ router.get('/', (req: Request, res: Response) => {
 });
 
 // ─── GET single OPD record ────────────────────────────
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
     try {
-        const record = db.selectOne('opd_records', 'id = ?', [req.params.id as string]);
+        const record = await db.selectOne('opd_records', 'id = ?', [req.params.id as string]);
         if (!record) return res.status(404).json({ success: false, message: 'Not found' });
         res.json({ success: true, record });
     } catch (e: any) {
@@ -100,7 +91,7 @@ router.get('/:id', (req: Request, res: Response) => {
 });
 
 // ─── POST: create OPD record ──────────────────────────
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
     try {
         const body = req.body;
         if (!body.patient_name?.trim()) {
@@ -136,7 +127,7 @@ router.post('/', (req: Request, res: Response) => {
             updated_at: now,
         };
 
-        const id = db.insert('opd_records', data);
+        const id = await db.insert('opd_records', data);
         res.status(201).json({ success: true, id, message: 'OPD record saved' });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });
@@ -144,11 +135,11 @@ router.post('/', (req: Request, res: Response) => {
 });
 
 // ─── PUT: update OPD record ───────────────────────────
-router.put('/:id', (req: Request, res: Response) => {
+router.put('/:id', async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id as string, 10);
         const body = req.body;
-        const existing = db.selectOne('opd_records', 'id = ?', [id]);
+        const existing = await db.selectOne('opd_records', 'id = ?', [id]);
         if (!existing) return res.status(404).json({ success: false, message: 'OPD record not found' });
 
         const updates: Record<string, any> = { updated_at: new Date().toISOString() };
@@ -161,7 +152,7 @@ router.put('/:id', (req: Request, res: Response) => {
         if (body.investigations !== undefined) updates.investigations = body.investigations ? JSON.stringify(body.investigations) : null;
         if (body.vitals !== undefined) updates.vitals = body.vitals ? JSON.stringify(body.vitals) : null;
 
-        db.update('opd_records', updates, 'id = ?', [id]);
+        await db.update('opd_records', updates, 'id = ?', [id]);
         res.json({ success: true, message: 'OPD record updated' });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });
@@ -169,12 +160,12 @@ router.put('/:id', (req: Request, res: Response) => {
 });
 
 // ─── DELETE: remove OPD record ────────────────────────
-router.delete('/:id', (req: Request, res: Response) => {
+router.delete('/:id', async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id as string, 10);
-        const existing = db.selectOne('opd_records', 'id = ?', [id]);
+        const existing = await db.selectOne('opd_records', 'id = ?', [id]);
         if (!existing) return res.status(404).json({ success: false, message: 'Not found' });
-        db.delete('opd_records', 'id = ?', [id]);
+        await db.delete('opd_records', 'id = ?', [id]);
         res.json({ success: true, message: 'OPD record deleted' });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });

@@ -15,12 +15,12 @@ function generatePatientId(): string {
 // Reuses an existing patient by mobile if one exists, otherwise registers a new
 // patient record — so patients created via Walk-in/Appointment booking show up
 // in the Patients list the same way as patients added through the Add Patient page.
-export function findOrCreatePatient(opts: { full_name: string; mobile?: string | null; visit_type?: string | null; }): number {
+export async function findOrCreatePatient(opts: { full_name: string; mobile?: string | null; visit_type?: string | null; }): Promise<number> {
     const name = opts.full_name?.trim();
     const mobile = opts.mobile?.trim() || null;
 
     if (mobile) {
-        const existing = patientDb.selectOne('patients', 'mobile = ?', [mobile]) as any;
+        const existing = await patientDb.selectOne('patients', 'mobile = ?', [mobile]) as any;
         if (existing) return existing.id;
     }
 
