@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════
-   dashboard.css — ClinicBase Dashboard
+   dashboard.css — Jai Ganesh Nursing Home Dashboard
    Production-grade responsive — all breakpoints
    375px / 480px / 640px / 768px / 1024px / 1280px+
 ═══════════════════════════════════════════════════ */
@@ -769,6 +769,61 @@ a { text-decoration: none; color: inherit; }
 /* Empty & skeleton */
 .empty-state { padding: 32px 16px; text-align: center; color: var(--text-faint); font-size: 13px; }
 .empty-state-icon { font-size: 28px; margin-bottom: 8px; opacity: 0.5; }
+
+/* ─── MODAL (View Visit Record) ──────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 400;
+  background: rgba(15,23,42,0.35);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  display: none; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.modal-overlay.open { display: flex; animation: fadeIn 0.18s ease; }
+.modal {
+  background: var(--surface); border-radius: var(--radius-xl, 16px);
+  width: 100%; max-width: 760px; max-height: 90vh;
+  display: flex; flex-direction: column;
+  box-shadow: var(--shadow-lg); overflow: hidden;
+  animation: slideUp 0.22s cubic-bezier(0.16,1,0.3,1);
+}
+.modal.modal-sm { max-width: 560px; }
+.modal-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 20px 24px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.modal-title { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+.modal-close {
+  width: 32px; height: 32px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted); transition: all var(--transition); flex-shrink: 0;
+}
+.modal-close:hover { background: var(--surface-2); color: var(--text); }
+.modal-close svg { width: 16px; height: 16px; }
+.modal-body { padding: 20px 24px 24px; overflow-y: auto; flex: 1; }
+.view-visit-footer {
+  display: flex; justify-content: flex-end;
+  padding: 14px 20px; border-top: 1px solid var(--border);
+}
+
+/* Clinic-letterhead visit record layout, shared with the Add Patient page's
+   View Visit modal and the OPD print — vitals, structured medicine/
+   investigation tables, header with clinic + doctor details. */
+#view-visit-body { padding: 4px 20px 0; }
+#view-visit-body .rx-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #2563EB; padding-bottom: 12px; margin-bottom: 16px; }
+#view-visit-body .rx-clinic-name { font-size: 18px; font-weight: 800; color: #dc2626; margin: 0; }
+#view-visit-body .rx-clinic-sub { font-size: 12px; color: #475569; margin: 2px 0; }
+#view-visit-body .rx-clinic-address { font-size: 11px; color: #64748b; margin: 2px 0; }
+#view-visit-body .rx-doctor { text-align: right; font-size: 13px; }
+#view-visit-body .rx-doctor-name { font-weight: 700; font-size: 15px; margin: 0; color: var(--text); }
+#view-visit-body .rx-patient-strip { display: flex; flex-wrap: wrap; gap: 18px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 13px; }
+#view-visit-body .rx-patient-strip b { display: block; font-size: 10px; text-transform: uppercase; color: var(--text-faint); }
+#view-visit-body .rx-section { margin-bottom: 14px; }
+#view-visit-body .rx-section h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--primary); margin: 0 0 4px; border-bottom: 1px dashed var(--border); padding-bottom: 3px; }
+#view-visit-body .rx-section p { font-size: 13.5px; margin: 0; white-space: pre-wrap; color: var(--text); }
+#view-visit-body .rx-med-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+#view-visit-body .rx-med-table th, #view-visit-body .rx-med-table td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; color: var(--text); }
+#view-visit-body .rx-med-table th { background: var(--surface-2); }
+#view-visit-body .rx-empty { font-size: 12.5px; color: var(--text-faint); font-style: italic; margin: 0; }
 
 /* ─── TOAST ───────────────────────────────────── */
 .toast-container {

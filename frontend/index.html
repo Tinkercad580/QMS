@@ -4,13 +4,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ClinicBase — Dashboard</title>
+  <title>Jai Ganesh Nursing Home — Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="datepicker.css?v=1">
 </head>
 
 <body>
@@ -25,7 +26,7 @@
           <path d="M16 8v16M8 16h16" stroke="#fff" stroke-width="2.5" stroke-linecap="round" />
           <circle cx="16" cy="16" r="4" fill="#fff" />
         </svg>
-        <span class="topbar-title">ClinicBase</span>
+        <span class="topbar-title">Jai Ganesh Nursing Home</span>
       </a>
       <span class="topbar-badge">Dashboard</span>
     </div>
@@ -302,12 +303,9 @@
                 <th>Token</th>
                 <th>Patient</th>
                 <th>Mobile</th>
-                <th>Type</th>
                 <th>Referred by</th>
-                <th>Slot</th>
                 <th>Priority</th>
                 <th>Status</th>
-                <th>Fee</th>
                 <th>Paid</th>
               </tr>
             </thead>
@@ -348,6 +346,44 @@
             </thead>
             <tbody id="dayMissedApptBody"></tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── PATIENT DIRECTORY ───────────────────────────── -->
+    <div class="section-block">
+      <div class="section-header">
+        <div class="section-title-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+          </svg>
+          <h2 class="section-title">Patient Directory</h2>
+        </div>
+        <div class="filter-group">
+          <input type="text" id="patientTableSearch" class="search-input" placeholder="Search by Name, Mobile, or ID..."
+            style="width: 260px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;">
+        </div>
+      </div>
+      <div class="table-area">
+        <div class="tbl-scroll">
+          <table class="data-table" id="patientTable">
+            <thead>
+              <tr>
+                <th>Patient ID</th>
+                <th>Registered</th>
+                <th>Name</th>
+                <th>Mobile</th>
+                <th>Age/Gender</th>
+                <th>City</th>
+              </tr>
+            </thead>
+            <tbody id="patientTableBody"></tbody>
+          </table>
+        </div>
+        <div class="tbl-footer">
+          <span id="patientTableCount">0 records</span>
+          <div class="pagination" id="patientTablePagination"></div>
         </div>
       </div>
     </div>
@@ -413,44 +449,6 @@
       </div>
     </div>
 
-    <!-- ─── RECENT QUEUE ACTIVITY ─────────────────────── -->
-    <div class="section-block">
-      <div class="section-header">
-        <div class="section-title-wrap">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-            <circle cx="9" cy="7" r="4" />
-          </svg>
-          <h2 class="section-title">Patient Directory</h2>
-        </div>
-        <div class="filter-group">
-          <input type="text" id="patientTableSearch" class="search-input" placeholder="Search by Name, Mobile, or ID..."
-            style="width: 260px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;">
-        </div>
-      </div>
-      <div class="table-area">
-        <div class="tbl-scroll">
-          <table class="data-table" id="patientTable">
-            <thead>
-              <tr>
-                <th>Patient ID</th>
-                <th>Registered</th>
-                <th>Name</th>
-                <th>Mobile</th>
-                <th>Age/Gender</th>
-                <th>City</th>
-              </tr>
-            </thead>
-            <tbody id="patientTableBody"></tbody>
-          </table>
-        </div>
-        <div class="tbl-footer">
-          <span id="patientTableCount">0 records</span>
-          <div class="pagination" id="patientTablePagination"></div>
-        </div>
-      </div>
-    </div>
-
   </main>
 
 
@@ -482,10 +480,29 @@
     </div>
   </aside>
 
+  <!-- ─── MODAL: VIEW VISIT RECORD ───────────────────────── -->
+  <div class="modal-overlay" id="view-visit-modal">
+    <div class="modal modal-sm" role="dialog">
+      <div class="modal-header">
+        <h2 class="modal-title">Visit Record</h2>
+        <button class="modal-close" id="close-view-visit-modal">
+          <svg viewBox="0 0 20 20" fill="none">
+            <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body" id="view-visit-body"></div>
+      <div class="view-visit-footer">
+        <button type="button" class="btn btn-primary" id="close-view-visit-btn">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ─── TOAST ─────────────────────────────────────────── -->
   <div id="toastContainer" class="toast-container"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="datepicker.js?v=2"></script>
   <script src="script.js"></script>
 </body>
 
