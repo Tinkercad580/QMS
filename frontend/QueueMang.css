@@ -329,6 +329,8 @@ button { cursor: pointer; border: none; background: none; }
 .queue-date-nav { display: flex; align-items: center; gap: 6px; margin-left: 6px; }
 .queue-date-nav #queue-date-input { padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); font-size: 12.5px; color: var(--text); }
 .queue-date-nav.not-today #queue-date-input { border-color: var(--primary); color: var(--primary); font-weight: 600; }
+.queue-date-nav .dp-field { min-width: 118px; }
+.queue-date-nav.not-today .dp-display { border-color: var(--primary); color: var(--primary); font-weight: 600; }
 .cal-weekdays { display: grid; grid-template-columns: repeat(7,1fr); margin-bottom: 6px; }
 .cal-weekdays span { text-align: center; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); padding: 4px 0; }
 .cal-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 2px; }
@@ -479,6 +481,7 @@ button { cursor: pointer; border: none; background: none; }
 
 /* ─── Searchable combobox (Medicine / Investigation) ───── */
 .combo-wrap { position: relative; }
+.combo-wrap input, .combo-wrap textarea { width: 100%; display: block; }
 /* Kill the oversized native IE/Edge "clear value" icon — we render our own below. */
 .combo-wrap input::-ms-clear, .combo-wrap input::-ms-reveal { display: none; width: 0; height: 0; }
 .combo-wrap input { padding-right: 26px !important; }

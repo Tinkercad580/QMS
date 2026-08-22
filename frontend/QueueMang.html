@@ -5,7 +5,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Queue Management</title>
-  <link rel="stylesheet" href="QueueMang.css?v=8" />
+  <link rel="stylesheet" href="QueueMang.css?v=9" />
+  <link rel="stylesheet" href="datepicker.css?v=1" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -460,12 +461,18 @@
           <div class="form-grid">
             <div class="form-group full-width">
               <label>History / Complaints</label>
-              <textarea id="of2-history" name="history" rows="2" placeholder="e.g. Knee pain…"></textarea>
+              <div class="combo-wrap">
+                <textarea id="of2-history" name="history" rows="2" placeholder="e.g. Knee pain…"></textarea>
+                <div class="combo-panel"></div>
+              </div>
             </div>
             <div class="form-group full-width">
               <label>Previous Illness</label>
-              <textarea id="of2-prev-illness" name="previous_illness" rows="2"
-                placeholder="e.g. Hypertension, Diabetes mellitus…"></textarea>
+              <div class="combo-wrap">
+                <textarea id="of2-prev-illness" name="previous_illness" rows="2"
+                  placeholder="e.g. Hypertension, Diabetes mellitus…"></textarea>
+                <div class="combo-panel"></div>
+              </div>
             </div>
             <div class="form-group full-width">
               <label>Signs / Examination Details</label>
@@ -574,7 +581,8 @@
     </div>
   </div>
 
-  <script src="QueueMang.js?v=24"></script>
+  <script src="datepicker.js?v=2"></script>
+  <script src="QueueMang.js?v=26"></script>
 </body>
 
 </html>

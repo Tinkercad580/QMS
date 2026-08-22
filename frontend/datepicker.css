@@ -1,0 +1,133 @@
+/* ═══════════════════════════════════════════════════════
+   Shared custom date picker — replaces the native browser
+   <input type="date"> popup everywhere in the app with one
+   consistent, professional-looking calendar dropdown.
+   ═══════════════════════════════════════════════════════ */
+
+.dp-field {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  /* Auto-width by default (matches a plain row-context date input); JS opts
+     a field into width:100% only when it replaced a flex-stretched input. */
+  min-width: 150px;
+}
+
+.dp-display {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface-2, #f8fafc);
+  font-size: 13px;
+  color: var(--text, #1e293b);
+  cursor: pointer;
+  transition: all 0.15s;
+  user-select: none;
+}
+.dp-display:hover { border-color: var(--primary, #2563eb); }
+.dp-field.open .dp-display { border-color: var(--primary, #2563eb); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+.dp-display.dp-placeholder { color: var(--text-faint, #94a3b8); }
+.dp-display.dp-disabled-display { cursor: not-allowed; opacity: 0.6; background: var(--surface-3, #eef1f5); }
+.dp-display-icon { flex-shrink: 0; color: var(--text-muted, #64748b); display: flex; }
+.dp-display.dp-placeholder .dp-display-icon,
+.dp-field.open .dp-display-icon { color: var(--primary, #2563eb); }
+
+.dp-panel {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 200;
+  width: 260px;
+  background: #fff;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(15,23,42,0.16);
+  padding: 12px;
+  animation: dpPanelIn 0.14s ease;
+}
+.dp-panel.dp-align-right { left: auto; right: 0; }
+.dp-field.open .dp-panel { display: block; }
+
+@keyframes dpPanelIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.dp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.dp-nav-btn {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px;
+  background: var(--surface-2, #f8fafc);
+  border: 1px solid var(--border, #e2e8f0);
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.dp-nav-btn:hover { background: var(--primary-light, #eff6ff); color: var(--primary, #2563eb); border-color: var(--primary, #2563eb); }
+.dp-title {
+  font-size: 13px; font-weight: 700; color: var(--text, #1e293b);
+  cursor: pointer; padding: 3px 8px; border-radius: 6px;
+}
+.dp-title:hover { background: var(--surface-2, #f8fafc); }
+
+.dp-weekdays {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 4px;
+}
+.dp-weekdays span {
+  text-align: center; font-size: 10px; font-weight: 700;
+  color: var(--text-faint, #94a3b8); text-transform: uppercase;
+  padding: 4px 0;
+}
+
+.dp-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.dp-day {
+  aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+  font-size: 12.5px; border-radius: 6px; cursor: pointer;
+  color: var(--text, #1e293b); position: relative;
+  transition: background 0.12s, color 0.12s;
+}
+.dp-day:hover { background: var(--surface-2, #f8fafc); }
+.dp-day.dp-outside { color: var(--text-faint, #cbd5e1); }
+.dp-day.dp-today { font-weight: 800; color: var(--primary, #2563eb); }
+.dp-day.dp-today::after {
+  content: ''; position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%);
+  width: 4px; height: 4px; border-radius: 50%; background: var(--primary, #2563eb);
+}
+.dp-day.dp-selected { background: var(--primary, #2563eb); color: #fff; font-weight: 700; }
+.dp-day.dp-selected::after { background: #fff; }
+.dp-day.dp-disabled { color: var(--text-faint, #e2e8f0); cursor: not-allowed; pointer-events: none; }
+
+.dp-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border, #e2e8f0);
+}
+.dp-footer button {
+  background: none; border: none; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--primary, #2563eb);
+  padding: 4px 6px; border-radius: 4px;
+}
+.dp-footer button:hover { background: var(--primary-light, #eff6ff); }
+.dp-footer button.dp-clear-btn { color: var(--text-muted, #64748b); }
+.dp-footer button.dp-clear-btn:hover { background: var(--surface-2, #f8fafc); color: var(--error, #dc2626); }
+
+/* Month/year quick-jump grid, shown when clicking the header title */
+.dp-yearview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.dp-yearview .dp-month-cell {
+  padding: 10px 4px; text-align: center; font-size: 12.5px; border-radius: 6px;
+  cursor: pointer; color: var(--text, #1e293b);
+}
+.dp-yearview .dp-month-cell:hover { background: var(--surface-2, #f8fafc); }
+.dp-yearview .dp-month-cell.dp-current-month { background: var(--primary, #2563eb); color: #fff; font-weight: 700; }

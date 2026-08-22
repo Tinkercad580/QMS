@@ -101,6 +101,31 @@ const INVESTIGATION_INSTRUCTION_OPTIONS = {
   'MRI': ['Get done before next visit', 'Only if X-ray shows severe changes'],
 };
 
+// Common presenting complaints for an Ortho / Bone Fracture / Trauma & Spine
+// practice — covers the joints/regions and symptom patterns seen most often.
+// Anything the doctor needs beyond this list is still just typed in and saved.
+const HISTORY_COMPLAINT_OPTIONS = [
+  'Right Knee pain', 'Left Knee pain', 'Both Knees pain', 'Lower back pain', 'Neck pain',
+  'Right Shoulder pain', 'Left Shoulder pain', 'Right Hip pain', 'Left Hip pain',
+  'Right Ankle pain', 'Left Ankle pain', 'Right Wrist pain', 'Left Wrist pain',
+  'Right Elbow pain', 'Left Elbow pain', 'Heel pain', 'Swelling in joint',
+  'Stiffness in joint', 'Morning stiffness', 'Night pain', 'Difficulty walking',
+  'Limping', 'Numbness/tingling in limb', 'Weakness in limb', 'Restricted range of motion',
+  'Clicking/popping sound in joint', 'Instability of joint', 'Deformity of limb',
+  'Pain after fall', 'Pain after road traffic accident', 'Sports injury',
+  'Pain while climbing stairs', 'Pain while squatting', 'Post-operative follow-up',
+];
+
+// Common comorbidities relevant to an ortho pre-op/general assessment.
+const PREVIOUS_ILLNESS_OPTIONS = [
+  'Diabetes mellitus', 'Hypertension', 'Hypothyroidism', 'Osteoporosis',
+  'Rheumatoid Arthritis', 'Osteoarthritis', 'Asthma', 'Coronary Artery Disease',
+  'Chronic Kidney Disease', 'Tuberculosis (past)', 'Anemia', 'Gout',
+  'Previous Fracture', 'Previous Surgery', 'Obesity', 'Epilepsy',
+  'Cervical Spondylosis', 'Lumbar Spondylosis', 'Peripheral Vascular Disease',
+  'No known illness',
+];
+
 const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -138,6 +163,8 @@ let state = {
   // per-array so growing one doesn't mutate the shared defaults constant.
   investigationDetailOptions: Object.fromEntries(Object.entries(INVESTIGATION_DETAIL_OPTIONS).map(([k, v]) => [k, [...v]])),
   investigationInstructionOptions: Object.fromEntries(Object.entries(INVESTIGATION_INSTRUCTION_OPTIONS).map(([k, v]) => [k, [...v]])),
+  historyComplaintOptions: [...HISTORY_COMPLAINT_OPTIONS],
+  previousIllnessOptions: [...PREVIOUS_ILLNESS_OPTIONS],
 };
 
 
@@ -167,6 +194,8 @@ const FLAT_OPTION_CATEGORIES = {
   medicine_duration: 'medDurationOptions',
   medicine_route: 'medRouteOptions',
   medicine_instruction: 'medInstructionOptions',
+  history_complaint: 'historyComplaintOptions',
+  previous_illness: 'previousIllnessOptions',
 };
 // Context-scoped categories (value depends on the investigation type it was
 // entered under) → the state map each one grows.
@@ -252,6 +281,23 @@ function syncCustomOptions(medicines = [], investigations = []) {
   });
 }
 
+// History/Complaints and Previous Illness are free-text bulleted textareas —
+// each "- " line typed that isn't already a known suggestion gets remembered
+// the same way a custom medicine/investigation value does.
+function syncTextareaOptions(text, category) {
+  const stateKey = FLAT_OPTION_CATEGORIES[category];
+  if (!text || !stateKey) return;
+  text.split('\n')
+    .map(line => line.replace(/^-\s*/, '').trim())
+    .filter(Boolean)
+    .forEach(value => {
+      if (!state[stateKey].some(o => o.toLowerCase() === value.toLowerCase())) {
+        state[stateKey].push(value);
+        saveCustomOption(category, value);
+      }
+    });
+}
+
 // ─── Searchable combobox ─────────────────────────────────
 // A real dropdown (click to open, type to filter, click a row to pick) instead
 // of the browser's plain native <datalist> suggestion popup — while still
@@ -298,6 +344,54 @@ function initCombobox(input, getOptions) {
   input.addEventListener('blur', () => setTimeout(closeCombo, 120));
 
   // One delegated escape-key handler for all comboboxes, bound once.
+  if (!comboCloseHandlerBound) {
+    comboCloseHandlerBound = true;
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') document.querySelectorAll('.combo-panel.open').forEach(p => p.classList.remove('open'));
+    });
+  }
+}
+
+// Same dropdown-suggestion idea as initCombobox, but for a multi-line bulleted
+// textarea (History/Complaints, Previous Illness) instead of a single-value
+// field: suggestions filter by whatever's typed on the CURRENT line, and
+// picking one fills in that line and starts a fresh bulleted line after it —
+// so multiple complaints/conditions can be picked one after another.
+function initTextareaCombo(textarea, getOptions) {
+  const wrap = textarea.closest('.combo-wrap');
+  const panel = wrap.querySelector('.combo-panel');
+
+  const currentLineQuery = () => {
+    const lines = textarea.value.split('\n');
+    return lines[lines.length - 1].replace(/^-\s*/, '').trim().toLowerCase();
+  };
+
+  const render = () => {
+    const q = currentLineQuery();
+    const options = getOptions().filter(o => !q || o.toLowerCase().includes(q));
+    panel.innerHTML = options.length
+      ? options.map(o => `<div class="combo-option">${escapeAttr(o)}</div>`).join('')
+      : '<div class="combo-empty">No matches — keep typing to add a new one</div>';
+
+    panel.querySelectorAll('.combo-option').forEach(el => {
+      el.addEventListener('mousedown', e => {
+        e.preventDefault(); // keep focus so the click registers before blur closes the panel
+        const lines = textarea.value.split('\n');
+        lines[lines.length - 1] = `- ${el.textContent}`;
+        textarea.value = lines.join('\n') + '\n- ';
+        textarea.dispatchEvent(new Event('input', { bubbles: true })); // keeps autosize in sync
+        textarea.focus();
+        render();
+      });
+    });
+  };
+  const openCombo = () => { render(); panel.classList.add('open'); };
+  const closeCombo = () => panel.classList.remove('open');
+
+  textarea.addEventListener('focus', openCombo);
+  textarea.addEventListener('input', openCombo);
+  textarea.addEventListener('blur', () => setTimeout(closeCombo, 150));
+
   if (!comboCloseHandlerBound) {
     comboCloseHandlerBound = true;
     document.addEventListener('keydown', e => {
@@ -909,6 +1003,8 @@ function bindEvents() {
   });
   ['of2-history', 'of2-prev-illness', 'of2-signs', 'of2-diagnosis', 'of2-invest-prev', 'of2-advice']
     .forEach(id => bindAdviceBullets(id));
+  initTextareaCombo($('of2-history'), () => state.historyComplaintOptions);
+  initTextareaCombo($('of2-prev-illness'), () => state.previousIllnessOptions);
 
   // Investigations modal (quick)
   $('close-invest-modal').addEventListener('click', () => closeModal('invest-modal'));
@@ -1873,6 +1969,8 @@ async function saveOpdRecord(payload) {
   if (!id) $('of2-id').value = data.id;
 
   syncCustomOptions(payload.medicines, payload.investigations);
+  syncTextareaOptions(payload.history, 'history_complaint');
+  syncTextareaOptions(payload.previous_illness, 'previous_illness');
 
   // Mirror the follow-up date into the serve modal's quick field if it's still empty
   if ($('sf-followup') && !$('sf-followup').value.trim() && payload.follow_up_date) $('sf-followup').value = payload.follow_up_date;
