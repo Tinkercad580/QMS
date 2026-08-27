@@ -9,6 +9,80 @@ const PAT_API = `${API_BASE}/api/patients`;
 const OPD_API = `${API_BASE}/api/opd`;
 const DEFAULT_REFERRED_BY = 'Dr. Jayaraja Puthran';
 
+// ─── Global loading feedback ───────────────────────────────
+// The database lives in another region, so every request costs a real
+// round-trip. Rather than sprinkle spinners through each call site, window.fetch
+// is wrapped once to count in-flight requests and drive a thin progress bar at
+// the top of the page — so any wait, anywhere, is visible instead of feeling
+// like the app froze. Background auto-refreshes opt out via { quiet: true }.
+(function initGlobalLoadingBar() {
+  const nativeFetch = window.fetch.bind(window);
+  let inFlight = 0;
+  let bar = null;
+  let hideTimer = null;
+
+  const getBar = () => (bar ||= document.getElementById('app-progress'));
+
+  const show = () => {
+    const el = getBar();
+    if (!el) return;
+    clearTimeout(hideTimer);
+    el.classList.add('active');
+    el.classList.remove('done');
+  };
+  const hide = () => {
+    const el = getBar();
+    if (!el) return;
+    el.classList.add('done');
+    hideTimer = setTimeout(() => el.classList.remove('active', 'done'), 260);
+  };
+
+  window.fetch = (input, init = {}) => {
+    const quiet = init.quiet === true;
+    if (quiet) delete init.quiet;
+    if (!quiet) { if (inFlight === 0) show(); inFlight++; }
+    return nativeFetch(input, init).finally(() => {
+      if (!quiet) { inFlight = Math.max(0, inFlight - 1); if (inFlight === 0) hide(); }
+    });
+  };
+})();
+
+// Busy state for things that aren't buttons — a queue card, an appointment row.
+// Marks the element as pending (dimmed, wait cursor) and blocks re-entry, so
+// clicking a card twice can't fire the same action twice.
+async function withPending(el, fn) {
+  if (!el) return fn();
+  if (el.dataset.pending === '1') return;
+  el.dataset.pending = '1';
+  el.classList.add('is-pending');
+  try {
+    return await fn();
+  } finally {
+    el.dataset.pending = '';
+    el.classList.remove('is-pending');
+  }
+}
+
+// Runs an async action with the button locked and showing a spinner, so a slow
+// save can't be double-submitted and the click visibly registers straight away.
+async function withBusy(btn, fn, busyLabel) {
+  if (!btn) return fn();
+  if (btn.dataset.busy === '1') return;          // already running — ignore re-click
+  const original = btn.innerHTML;
+  btn.dataset.busy = '1';
+  btn.disabled = true;
+  btn.classList.add('is-busy');
+  btn.innerHTML = `<span class="btn-spinner"></span>${busyLabel || btn.textContent.trim()}`;
+  try {
+    return await fn();
+  } finally {
+    btn.dataset.busy = '';
+    btn.disabled = false;
+    btn.classList.remove('is-busy');
+    btn.innerHTML = original;
+  }
+}
+
 const CLINIC_INFO = {
   name: 'Jai Ganesh Nursing Home',
   sub: 'Medical, Surgical, Orthopaedic Trauma Centre',
@@ -174,6 +248,9 @@ let state = {
 // ─── INIT ──────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   startClock();
+  // Shimmer placeholders while the first load is in flight, so the queue area
+  // reads as "loading" rather than as an empty queue.
+  $('queue-list').innerHTML = `<div class="queue-skeleton">${'<div class="skel-card"></div>'.repeat(4)}</div>`;
   loadAll();
   bindEvents();
   bindTextareaAutosize();
@@ -204,98 +281,120 @@ const CONTEXT_OPTION_CATEGORIES = {
   investigation_instruction: 'investigationInstructionOptions',
 };
 
+// Pulls every dropdown's saved values in ONE request. This used to issue eleven
+// (nine flat categories + two context-scoped ones), each a separate round-trip
+// to a remote database, on every single page load.
 async function loadCustomOptions() {
   try {
-    const flatEntries = Object.entries(FLAT_OPTION_CATEGORIES);
-    const flatResults = await Promise.all(flatEntries.map(([cat]) => fetch(`${OPD_API}/options/${cat}`).then(r => r.json())));
-    flatResults.forEach((data, idx) => {
-      const stateKey = flatEntries[idx][1];
-      (data.values || []).forEach(v => addOptionIfNew(stateKey, v));
+    const res = await fetch(`${OPD_API}/options`, { quiet: true });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'failed to load options');
+
+    Object.entries(FLAT_OPTION_CATEGORIES).forEach(([category, stateKey]) => {
+      state[stateKey] = mergeCustomFirst(data.flat?.[category], state[stateKey]);
     });
 
-    const contextEntries = Object.entries(CONTEXT_OPTION_CATEGORIES);
-    const contextResults = await Promise.all(contextEntries.map(([cat]) => fetch(`${OPD_API}/options/${cat}/by-context`).then(r => r.json())));
-    contextResults.forEach((data, idx) => {
-      const stateKey = contextEntries[idx][1];
-      Object.entries(data.grouped || {}).forEach(([ctx, values]) => {
-        values.forEach(v => addContextOptionIfNew(stateKey, ctx, v));
+    Object.entries(CONTEXT_OPTION_CATEGORIES).forEach(([category, stateKey]) => {
+      Object.entries(data.context?.[category] || {}).forEach(([ctx, values]) => {
+        state[stateKey][ctx] = mergeCustomFirst(values, state[stateKey][ctx] || []);
       });
     });
   } catch (e) { console.error('[Options] load failed', e); }
 }
 
-function addOptionIfNew(stateKey, value) {
-  if (!value) return;
-  const exists = state[stateKey].some(o => o.toLowerCase() === value.toLowerCase());
-  if (!exists) state[stateKey].push(value);
+// Saved (doctor-typed) values come back from the server newest-first and belong
+// at the TOP of the dropdown — ahead of the hardcoded built-in picklist — so the
+// value entered for the last patient is the first suggestion for the next one.
+// Built-ins keep their original order underneath, minus any the doctor has
+// since typed by hand (those already appear above as a custom value).
+function mergeCustomFirst(customValues, builtIns) {
+  const custom = (customValues || []).filter(Boolean);
+  const seen = new Set(custom.map(v => v.toLowerCase()));
+  return [...custom, ...builtIns.filter(b => !seen.has(b.toLowerCase()))];
 }
 
-function addContextOptionIfNew(stateKey, context, value) {
+// Adds a context-scoped value just typed this session (e.g. X-Ray → "Right
+// Knee") to the front of that context's list, so it's the first suggestion
+// immediately — matching the newest-first order loadCustomOptions() builds.
+function addContextOptionToFront(stateKey, context, value) {
   if (!value || !context) return;
   const map = state[stateKey];
   if (!map[context]) map[context] = [];
   const exists = map[context].some(o => o.toLowerCase() === value.toLowerCase());
-  if (!exists) map[context].push(value);
+  if (!exists) map[context].unshift(value);
 }
 
-function saveCustomOption(category, value, context) {
-  fetch(`${OPD_API}/options`, {
+// Ships every newly typed value from one save to the server in a single
+// request. Previously each value was POSTed on its own, so a prescription with
+// a few medicines could fire 15-20 requests per save — each one a full network
+// round-trip to a remote database, which is what made saving feel frozen.
+function saveCustomOptionsBulk(options) {
+  if (!options.length) return Promise.resolve();
+  return fetch(`${OPD_API}/options/bulk`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ category, value, context }),
-  }).catch(e => console.error('[Options] save failed', e));
+    body: JSON.stringify({ options }),
+  }).catch(e => console.error('[Options] bulk save failed', e));
+}
+
+// Records a newly typed flat value in local state (at the front, so it's the
+// first suggestion straight away) and returns it for the outgoing bulk request.
+// Returns null when the value is already known, so nothing is re-sent.
+function takeNewFlatOption(category, value) {
+  const stateKey = FLAT_OPTION_CATEGORIES[category];
+  if (!value || !stateKey) return null;
+  if (state[stateKey].some(o => o.toLowerCase() === value.toLowerCase())) return null;
+  state[stateKey].unshift(value);
+  return { category, value };
 }
 
 // Called after an OPD/investigation save — remembers every newly typed
 // medicine/investigation field value so future patients see it as a suggestion.
-function syncCustomOptions(medicines = [], investigations = []) {
+// Collects them rather than sending them; the caller flushes the whole batch.
+function collectCustomOptions(medicines = [], investigations = []) {
   const flatFieldToCategory = {
     name: 'medicine', dose: 'medicine_dose', frequency: 'medicine_frequency',
     duration: 'medicine_duration', route: 'medicine_route', instruction: 'medicine_instruction',
   };
+  const pending = [];
   medicines.forEach(m => {
     Object.entries(flatFieldToCategory).forEach(([field, category]) => {
-      const value = m[field];
-      const stateKey = FLAT_OPTION_CATEGORIES[category];
-      if (value && !state[stateKey].some(o => o.toLowerCase() === value.toLowerCase())) {
-        state[stateKey].push(value);
-        saveCustomOption(category, value);
-      }
+      const opt = takeNewFlatOption(category, m[field]);
+      if (opt) pending.push(opt);
     });
   });
 
   investigations.forEach(i => {
-    if (i.type && !state.investigationOptions.some(o => o.toLowerCase() === i.type.toLowerCase())) {
-      state.investigationOptions.push(i.type);
-      saveCustomOption('investigation', i.type);
-    }
+    const typeOpt = takeNewFlatOption('investigation', i.type);
+    if (typeOpt) pending.push(typeOpt);
+
     // Detail/Instruction are remembered as a pair with the investigation type
     // they were entered under (X-Ray → "Right Knee"), not as a flat global list.
-    if (i.type && i.detail) addContextOptionIfNew('investigationDetailOptions', i.type, i.detail);
-    if (i.type && i.detail && !(INVESTIGATION_DETAIL_OPTIONS[i.type] || []).some(o => o.toLowerCase() === i.detail.toLowerCase())) {
-      saveCustomOption('investigation_detail', i.detail, i.type);
+    if (i.type && i.detail) {
+      addContextOptionToFront('investigationDetailOptions', i.type, i.detail);
+      if (!(INVESTIGATION_DETAIL_OPTIONS[i.type] || []).some(o => o.toLowerCase() === i.detail.toLowerCase())) {
+        pending.push({ category: 'investigation_detail', value: i.detail, context: i.type });
+      }
     }
-    if (i.type && i.instruction) addContextOptionIfNew('investigationInstructionOptions', i.type, i.instruction);
-    if (i.type && i.instruction && !(INVESTIGATION_INSTRUCTION_OPTIONS[i.type] || []).some(o => o.toLowerCase() === i.instruction.toLowerCase())) {
-      saveCustomOption('investigation_instruction', i.instruction, i.type);
+    if (i.type && i.instruction) {
+      addContextOptionToFront('investigationInstructionOptions', i.type, i.instruction);
+      if (!(INVESTIGATION_INSTRUCTION_OPTIONS[i.type] || []).some(o => o.toLowerCase() === i.instruction.toLowerCase())) {
+        pending.push({ category: 'investigation_instruction', value: i.instruction, context: i.type });
+      }
     }
   });
+  return pending;
 }
 
 // History/Complaints and Previous Illness are free-text bulleted textareas —
 // each "- " line typed that isn't already a known suggestion gets remembered
 // the same way a custom medicine/investigation value does.
-function syncTextareaOptions(text, category) {
-  const stateKey = FLAT_OPTION_CATEGORIES[category];
-  if (!text || !stateKey) return;
-  text.split('\n')
+function collectTextareaOptions(text, category) {
+  if (!text) return [];
+  return text.split('\n')
     .map(line => line.replace(/^-\s*/, '').trim())
     .filter(Boolean)
-    .forEach(value => {
-      if (!state[stateKey].some(o => o.toLowerCase() === value.toLowerCase())) {
-        state[stateKey].push(value);
-        saveCustomOption(category, value);
-      }
-    });
+    .map(value => takeNewFlatOption(category, value))
+    .filter(Boolean);
 }
 
 // ─── Searchable combobox ─────────────────────────────────
@@ -423,13 +522,19 @@ function bindTextareaAutosize() {
 }
 
 async function loadAll(silent = false) {
-  // 1. Fetch patients FIRST so we have age/gender data ready in memory
-  await loadPatients();
+  // All three endpoints are independent server-side, so they go out together —
+  // this used to wait for patients to come back before even asking for the
+  // queue, which doubled the page's load time for no reason. Rendering is held
+  // until all three land, so queue cards still have patient age/gender to show.
+  await Promise.all([
+    loadPatients(silent),
+    loadQueue(silent, { render: false }),
+    loadAppointments(silent, { render: false }),
+  ]);
 
-  // 2. NOW fetch queue and appointments (which will render immediately using the patient data)
-  await Promise.all([loadQueue(silent), loadAppointments(silent)]);
-
-  // 3. Update top numbers
+  applyQueueFilters();
+  renderAppointmentPanel();
+  renderMiniCalendar();
   updateStats();
 }
 
@@ -463,20 +568,24 @@ function updateQueueDateNavUI() {
 }
 
 // ─── LOAD QUEUE ────────────────────────────────────────
-async function loadQueue(silent = false) {
+async function loadQueue(silent = false, { render = true } = {}) {
   try {
-    const res = await fetch(`${QUEUE_API}?date=${state.queueDate}`);
-    
+    // `quiet` on a silent (auto-refresh) load keeps the progress bar from
+    // flashing every 30 seconds when nobody asked for anything.
+    const res = await fetch(`${QUEUE_API}?date=${state.queueDate}`, { quiet: silent });
+
     // 👇 NEW: Check if the server is actually responding!
     if (!res.ok) {
       console.error(`HTTP Error: ${res.status} - Server might be down or crashed.`);
       throw new Error('Server offline or returned an error.');
     }
-    
+
     const data = await res.json();
     if (data.success) {
       state.queue = data.queue || [];
-      applyQueueFilters();
+      // Skipped when loadAll() is driving — it renders once after patients,
+      // queue and appointments have all arrived.
+      if (render) applyQueueFilters();
     } else {
       console.error("Backend returned false success:", data.message);
     }
@@ -487,14 +596,13 @@ async function loadQueue(silent = false) {
 }
 
 // ─── LOAD APPOINTMENTS ─────────────────────────────────
-async function loadAppointments(silent = false) {
+async function loadAppointments(silent = false, { render = true } = {}) {
   try {
-    const res = await fetch(`${APPT_API}?date=${state.selectedCalDate}`);
+    const res = await fetch(`${APPT_API}?date=${state.selectedCalDate}`, { quiet: silent });
     const data = await res.json();
     if (data.success) {
       state.appointments = data.appointments || [];
-      renderAppointmentPanel();
-      renderMiniCalendar();
+      if (render) { renderAppointmentPanel(); renderMiniCalendar(); }
     }
   } catch (e) {
     if (!silent) toast('error', 'Failed to load appointments');
@@ -502,12 +610,21 @@ async function loadAppointments(silent = false) {
 }
 
 // ─── LOAD PATIENTS (for search) ────────────────────────
-async function loadPatients() {
+async function loadPatients(silent = false) {
   try {
-    const res = await fetch(PAT_API);
+    const res = await fetch(PAT_API, { quiet: silent });
     const data = await res.json();
-    if (data.success) state.allPatients = data.patients || [];
-  } catch { }
+    if (data.success) {
+      state.allPatients = data.patients || [];
+      state.patientsLoaded = true;
+    }
+  } catch (e) {
+    // Previously swallowed entirely, which left the patient cache empty and
+    // made every search silently report "No patients found". Search now falls
+    // back to the server, but the failure still needs to be visible.
+    console.error('[Patients] load failed', e);
+    if (!silent) toast('error', 'Could not load patient list — search may be incomplete');
+  }
 }
 
 // ─── STATS ─────────────────────────────────────────────
@@ -922,43 +1039,72 @@ function renderAppointmentPanel() {
 }
 
 // ─── PATIENT SEARCH (reusable) ─────────────────────────
+// Searches the locally cached patient list for an instant result, then confirms
+// against the server. The cache alone was not reliable: it is only refreshed on
+// page load and every 30s, and loadPatients() used to fail silently — so a
+// patient registered moments ago, or any failed refresh, produced a flat
+// "No patients found" for someone who definitely exists. The server query is
+// authoritative and also covers patients beyond whatever the cache holds.
 function bindPatientSearch(inputId, resultsId, onSelect) {
   const input = $(inputId);
   const results = $(resultsId);
   let timer;
+  let seq = 0;   // guards against a slow earlier response overwriting a newer one
+
+  const render = (list, { loading = false, failed = false } = {}) => {
+    if (!list.length) {
+      results.innerHTML = `<div class="ps-item"><span style="color:var(--text-faint);font-size:12px">${
+        loading ? 'Searching…' : failed ? 'Search failed — check connection' : 'No patients found'
+      }</span></div>`;
+    } else {
+      results.innerHTML = list.map(p => `
+        <div class="ps-item" data-pid="${p.id}" data-name="${esc(p.full_name)}" data-mobile="${p.mobile || ''}" data-patid="${p.patient_id || ''}">
+          <div class="ps-avatar">${(p.full_name || '?')[0].toUpperCase()}</div>
+          <div>
+            <div class="ps-name">${esc(p.full_name)}</div>
+            <div class="ps-meta">${p.patient_id || `#${p.id}`} · ${p.mobile || 'No mobile'}</div>
+          </div>
+        </div>`).join('') + (loading ? `<div class="ps-item ps-more">Searching…</div>` : '');
+      results.querySelectorAll('.ps-item[data-pid]').forEach(item => {
+        item.addEventListener('click', () => {
+          onSelect({ id: item.dataset.pid, name: item.dataset.name, mobile: item.dataset.mobile, patient_id: item.dataset.patid });
+          results.classList.remove('show');
+          input.value = '';
+        });
+      });
+    }
+    results.classList.add('show');
+  };
+
+  const localMatches = q => state.allPatients.filter(p =>
+    (p.full_name || '').toLowerCase().includes(q) ||
+    (p.mobile || '').includes(q) ||
+    (p.patient_id || '').toLowerCase().includes(q)
+  ).slice(0, 6);
 
   input.addEventListener('input', () => {
     clearTimeout(timer);
-    timer = setTimeout(() => {
-      const q = input.value.trim().toLowerCase();
+    timer = setTimeout(async () => {
+      const raw = input.value.trim();
+      const q = raw.toLowerCase();
       if (q.length < 2) { results.classList.remove('show'); return; }
 
-      const matches = state.allPatients.filter(p =>
-        (p.full_name || '').toLowerCase().includes(q) ||
-        (p.mobile || '').includes(q) ||
-        (p.patient_id || '').toLowerCase().includes(q)
-      ).slice(0, 6);
+      const mine = ++seq;
+      const local = localMatches(q);
+      render(local, { loading: true });   // instant feedback from cache
 
-      if (!matches.length) {
-        results.innerHTML = `<div class="ps-item"><span style="color:var(--text-faint);font-size:12px">No patients found</span></div>`;
-      } else {
-        results.innerHTML = matches.map(p => `
-          <div class="ps-item" data-pid="${p.id}" data-name="${esc(p.full_name)}" data-mobile="${p.mobile || ''}" data-patid="${p.patient_id || ''}">
-            <div class="ps-avatar">${(p.full_name || '?')[0].toUpperCase()}</div>
-            <div>
-              <div class="ps-name">${esc(p.full_name)}</div>
-              <div class="ps-meta">${p.patient_id || `#${p.id}`} · ${p.mobile || 'No mobile'}</div>
-            </div>
-          </div>`).join('');
-        results.querySelectorAll('.ps-item[data-pid]').forEach(item => {
-          item.addEventListener('click', () => {
-            onSelect({ id: item.dataset.pid, name: item.dataset.name, mobile: item.dataset.mobile, patient_id: item.dataset.patid });
-            results.classList.remove('show');
-            input.value = '';
-          });
-        });
+      try {
+        const res = await fetch(`${PAT_API}/search?q=${encodeURIComponent(raw)}`, { quiet: true });
+        const data = await res.json();
+        if (mine !== seq) return;         // a newer keystroke already won
+        if (!data.success) throw new Error(data.message || 'search failed');
+        render((data.results || []).slice(0, 6));
+      } catch (e) {
+        if (mine !== seq) return;
+        console.error('[PatientSearch] server search failed', e);
+        // Fall back to whatever the cache could offer rather than showing nothing.
+        render(local, { failed: !local.length });
       }
-      results.classList.add('show');
     }, 200);
   });
 
@@ -972,23 +1118,34 @@ function bindEvents() {
   $('close-appt').addEventListener('click', () => closeModal('appt-modal'));
   $('cancel-appt').addEventListener('click', () => closeModal('appt-modal'));
   $('appt-modal').addEventListener('click', e => { if (e.target === $('appt-modal')) closeModal('appt-modal'); });
-  $('appt-form').addEventListener('submit', handleApptSubmit);
+  // Every submit/action below is routed through withBusy so the button locks,
+  // shows a spinner and can't be double-clicked while the request is in flight.
+  $('appt-form').addEventListener('submit', e => {
+    e.preventDefault();
+    withBusy($('appt-form').querySelector('[type=submit]'), () => handleApptSubmit(e), 'Booking…');
+  });
 
   // Serve modal
   $('close-serve').addEventListener('click', () => closeModal('serve-modal'));
   $('cancel-serve').addEventListener('click', () => closeModal('serve-modal'));
-  $('serve-form').addEventListener('submit', handleServeSubmit);
-  $('serve-print-btn').addEventListener('click', handlePrintFromServeModal);
-  $('opd-hold-btn').addEventListener('click', handleHoldVisit);
+  $('serve-form').addEventListener('submit', e => {
+    e.preventDefault();
+    withBusy($('serve-form').querySelector('[type=submit]'), () => handleServeSubmit(e), 'Saving…');
+  });
+  $('serve-print-btn').addEventListener('click', e => withBusy(e.currentTarget, handlePrintFromServeModal, 'Preparing…'));
+  $('opd-hold-btn').addEventListener('click', e => withBusy(e.currentTarget, handleHoldVisit, 'Holding…'));
 
   // OPD modal
   $('close-opd-modal').addEventListener('click', () => closeModal('opd-modal'));
   $('cancel-opd-modal').addEventListener('click', () => closeModal('opd-modal'));
   $('opd-modal').addEventListener('click', e => { if (e.target === $('opd-modal')) closeModal('opd-modal'); });
-  $('opd-inline-form').addEventListener('submit', handleOpdInlineSubmit);
+  $('opd-inline-form').addEventListener('submit', e => {
+    e.preventDefault();
+    withBusy($('opd-save-submit-btn'), () => handleOpdInlineSubmit(e), 'Saving…');
+  });
   $('opd-add-med-btn').addEventListener('click', () => addMedicineRow());
   $('opd-add-invest-btn').addEventListener('click', () => addInvestigationRow('opd-invest-list'));
-  $('opd-print-btn').addEventListener('click', handleOpdPrint);
+  $('opd-print-btn').addEventListener('click', e => withBusy(e.currentTarget, handleOpdPrint, 'Saving…'));
   // Quick shortcut for "go get an X-Ray/MRI/labs done" — opens the compact
   // investigations popup on top of the OPD modal without needing to fill the
   // full record first.
@@ -1011,14 +1168,17 @@ function bindEvents() {
   $('cancel-invest-modal').addEventListener('click', () => closeModal('invest-modal'));
   $('invest-modal').addEventListener('click', e => { if (e.target === $('invest-modal')) closeModal('invest-modal'); });
   $('invest-add-btn').addEventListener('click', () => addInvestigationRow('invest-quick-list', {}, { showComment: false }));
-  $('invest-save-btn').addEventListener('click', handleInvestSave);
-  $('invest-print-btn').addEventListener('click', handleInvestPrint);
+  $('invest-save-btn').addEventListener('click', e => withBusy(e.currentTarget, handleInvestSave, 'Saving…'));
+  $('invest-print-btn').addEventListener('click', e => withBusy(e.currentTarget, handleInvestPrint, 'Preparing…'));
 
   // Filters
   $('filter-status').addEventListener('change', e => { state.filterStatus = e.target.value; applyQueueFilters(); });
   $('filter-type').addEventListener('change', e => { state.filterType = e.target.value; applyQueueFilters(); });
-  $('refresh-queue-btn').addEventListener('click', () => { loadAll(); toast('info', 'Refreshed'); });
-  $('start-queue-btn').addEventListener('click', handleNextPatient);
+  $('refresh-queue-btn').addEventListener('click', e => withBusy(e.currentTarget, async () => {
+    await loadAll();
+    toast('info', 'Refreshed');
+  }, 'Refreshing…'));
+  $('start-queue-btn').addEventListener('click', e => withBusy(e.currentTarget, handleNextPatient, 'Calling…'));
 
   // Live Queue date navigation — browse/add to any date, not just today
   $('queue-date-input').value = state.queueDate;
@@ -1091,18 +1251,22 @@ function bindEvents() {
       const id = parseInt(card.dataset.id);
       const entry = state.queue.find(q => q.id === id);
       if (!entry) return;
-      if (entry.status === 'WAITING') callPatient(id);
-      else if (entry.status === 'CALLED' || entry.status === 'SERVING') { state.autoCallNext = true; openOpdModal(entry); }
-      else if (entry.status === 'HOLD') openInvestModal(entry);
-      else if (entry.status === 'MISSED') queueAction(id, 'requeue').then(() => toast('info', 'Re-queued at end'));
-      else if (entry.status === 'DONE' || entry.status === 'NOSHOW') { state.autoCallNext = false; openServeModal(id); }
+      // Every branch below hits the network, so the card shows a pending state
+      // and refuses a second click until it finishes.
+      withPending(card, async () => {
+        if (entry.status === 'WAITING') await callPatient(id);
+        else if (entry.status === 'CALLED' || entry.status === 'SERVING') { state.autoCallNext = true; await openOpdModal(entry); }
+        else if (entry.status === 'HOLD') await openInvestModal(entry);
+        else if (entry.status === 'MISSED') { await queueAction(id, 'requeue'); toast('info', 'Re-queued at end'); }
+        else if (entry.status === 'DONE' || entry.status === 'NOSHOW') { state.autoCallNext = false; await openServeModal(id); }
+      });
       return;
     }
     e.stopPropagation();
     const id = parseInt(btn.dataset.id);
     const act = btn.dataset.action;
 
-    if (act === 'call') callPatient(id);
+    if (act === 'call') withBusy(btn, () => callPatient(id), '');
 
     // Doctor vs staff separation: an ongoing (CALLED/SERVING) patient goes straight
     // to the doctor's Full OPD Record — clinical entry only, no billing fields.
@@ -1114,7 +1278,7 @@ function bindEvents() {
 
       if (entry.status === 'CALLED' || entry.status === 'SERVING') {
         state.autoCallNext = true;
-        openOpdModal(entry);
+        withBusy(btn, () => openOpdModal(entry), '');
       } else {
         state.autoCallNext = false;
         openServeModal(id);
@@ -1130,14 +1294,14 @@ function bindEvents() {
 
     // Lets staff/doctor see exactly what was filled in for a completed visit —
     // diagnosis, prescription, investigations — without touching outcome/payment.
-    if (act === 'view-opd') viewOpdRecordByQueueId(id);
+    if (act === 'view-opd') withBusy(btn, () => viewOpdRecordByQueueId(id), '');
 
     // Reopen the full OPD form (not just outcome/payment) so a completed
     // visit's diagnosis/medicines/investigations can still be added to or
     // corrected after the fact.
     if (act === 'edit-opd') {
       const entry = state.queue.find(q => q.id === id);
-      if (entry) { state.autoCallNext = false; openOpdModal(entry); }
+      if (entry) { state.autoCallNext = false; withBusy(btn, () => openOpdModal(entry), ''); }
     }
 
     // ── UPGRADED: Small "No-show" button auto-advances without flickering
@@ -1162,9 +1326,9 @@ function bindEvents() {
       });
     }
 
-    if (act === 'miss') queueAction(id, 'miss').then(() => toast('warning', 'Moved to missed'));
-    if (act === 'requeue') queueAction(id, 'requeue').then(() => toast('info', 'Re-queued at end'));
-    if (act === 'resume') queueAction(id, 'resume').then(() => toast('success', '▶ Back from investigation — returned to Waiting'));
+    if (act === 'miss') withBusy(btn, () => queueAction(id, 'miss').then(() => toast('warning', 'Moved to missed')), '');
+    if (act === 'requeue') withBusy(btn, () => queueAction(id, 'requeue').then(() => toast('info', 'Re-queued at end')), '');
+    if (act === 'resume') withBusy(btn, () => queueAction(id, 'resume').then(() => toast('success', '▶ Back from investigation — returned to Waiting')), '');
     if (act === 'remove') confirmAction('🗑️', 'Remove from queue?', 'This will permanently remove this entry.', () => queueAction(id, 'remove'));
   });
 
@@ -1174,7 +1338,7 @@ function bindEvents() {
     if (!item) return;
     const apptId = item.dataset.apptId;
     const appt = state.appointments.find(a => String(a.id) === apptId);
-    if (appt && appt.status === 'WAITING') injectAppointmentToQueue(appt);
+    if (appt && appt.status === 'WAITING') withPending(item, () => injectAppointmentToQueue(appt));
   });
 
   // Patient search bindings
@@ -1193,12 +1357,20 @@ function bindEvents() {
   });
 
   // Confirm dialog
-  $('confirm-cancel').addEventListener('click', () => { $('confirm-overlay').classList.remove('open'); state.pendingConfirm = null; });
-  $('confirm-ok').addEventListener('click', () => {
-    if (state.pendingConfirm) state.pendingConfirm();
-    $('confirm-overlay').classList.remove('open');
+  $('confirm-cancel').addEventListener('click', () => { $('confirm-overlay').classList.remove('open'); syncBodyScrollLock(); state.pendingConfirm = null; });
+  // Held open with the button spinning until the confirmed action finishes, so
+  // a destructive action (remove from queue) visibly completes rather than the
+  // dialog vanishing while the request is still in flight.
+  $('confirm-ok').addEventListener('click', e => withBusy(e.currentTarget, async () => {
+    const action = state.pendingConfirm;
     state.pendingConfirm = null;
-  });
+    try {
+      if (action) await action();
+    } finally {
+      $('confirm-overlay').classList.remove('open');
+      syncBodyScrollLock();
+    }
+  }, 'Working…'));
 
 // 👇 Instant Follow-up Booking Logic 👇
   const bookFollowupBtn = $('btn-book-followup');
@@ -1270,7 +1442,7 @@ function bindEvents() {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       ['appt-modal', 'serve-modal'].forEach(id => closeModal(id));
-      $('confirm-overlay').classList.remove('open');
+      $('confirm-overlay').classList.remove('open'); syncBodyScrollLock();
     }
   });
 }
@@ -1284,7 +1456,7 @@ function openApptModal() {
   state.apptSelectedDate = null;
   $('appt-selected-date-label').textContent = '— click a date above —';
   renderBigCalendar();
-  $('appt-modal').classList.add('open');
+  openModalEl('appt-modal');
   refreshAllTextareaSizes();
 }
 
@@ -1353,7 +1525,7 @@ function openServeModal(queueId) {
     }
   }
 
-  $('serve-modal').classList.add('open');
+  openModalEl('serve-modal');
 }
 
 // ─── Quick Investigations Modal ────────────────────────
@@ -1372,7 +1544,7 @@ async function openInvestModal(entry) {
   $('iv-strip-mobile').textContent = entry.mobile || '—';
   $('iv-strip-age').textContent = pat?.age ? `${pat.age}Y ${pat.gender || ''}`.trim() : '—';
   clearInvestigationRows('invest-quick-list');
-  $('invest-modal').classList.add('open');
+  openModalEl('invest-modal');
 
   try {
     const res = await fetch(`${OPD_API}?queue_entry_id=${entry.id}`);
@@ -1417,7 +1589,7 @@ async function handleInvestSave() {
     if (!data.success) throw new Error(data.message);
     if (!recordId) $('iv-record-id').value = data.id;
     state.investOriginal = investigations;
-    syncCustomOptions([], investigations);
+    saveCustomOptionsBulk(collectCustomOptions([], investigations));
 
     // If the full OPD form for this same visit is open behind this popup, reflect
     // the just-saved investigations into it immediately — no reload/reopen needed.
@@ -1546,24 +1718,27 @@ async function openOpdModal(entry) {
     ? `Editing completed record for ${entry.patient_name}`
     : `History & prescription for ${entry.patient_name}`;
   $('opd-newvisit-date').textContent = state.queueDate || today();
-  $('opd-modal').classList.add('open');
+  openModalEl('opd-modal');
   refreshAllTextareaSizes();
 
-  let existing = null;
-  try {
-    const res = await fetch(`${OPD_API}?queue_entry_id=${entry.id}`);
-    const data = await res.json();
-    existing = (data.records || [])[0];
-    if (existing) fillOpdForm(existing);
-  } catch (e) { console.error('[OPD] load current record failed', e); }
+  // This visit's saved record and the patient's past records are two unrelated
+  // lookups — fetched together so the modal fills in after one round-trip
+  // instead of waiting for the first before starting the second.
+  const [existingRes, history] = await Promise.all([
+    fetch(`${OPD_API}?queue_entry_id=${entry.id}`)
+      .then(r => r.json())
+      .catch(e => { console.error('[OPD] load current record failed', e); return null; }),
+    loadOpdHistory(entry),
+  ]);
+
+  const existing = (existingRes?.records || [])[0];
+  if (existing) fillOpdForm(existing);
 
   // Weight/height are registered patient attributes — pull them straight from the
   // patient's profile (as set on the Add Patient page) unless this visit already
   // has its own saved value.
   if (pat?.weight_kg) setAutofilledVital('of2-vital-weight', pat.weight_kg);
   if (pat?.height_cm) setAutofilledVital('of2-vital-height', pat.height_cm);
-
-  const history = await loadOpdHistory(entry);
 
   // BP/Pulse are per-visit vitals, not patient attributes — carry over the most
   // recent reading as a starting point only if this visit doesn't already have one.
@@ -1881,9 +2056,10 @@ function renderHistDetail(rec) {
   let invs = [];
   try { invs = rec.investigations ? JSON.parse(rec.investigations) : []; } catch { invs = []; }
 
-  // Renders a block of lines as a dash-bulleted list, one "- " per line, so every
-  // multi-item section (medicines, investigations, advice…) reads consistently.
-  const bulletList = (lines) => lines.filter(Boolean).map(l => `- ${escapeAttr(l)}`).join('\n');
+  // Renders a block of lines as a stack of individual white boxes (one per
+  // entry) inside the section's light-blue card, so every multi-item section
+  // (medicines, investigations, advice, history…) reads as a clear list.
+  const itemBoxes = (lines) => `<div class="ohd-items">${lines.filter(Boolean).map(l => `<div class="ohd-item">${escapeAttr(l)}</div>`).join('')}</div>`;
 
   state.viewingHistRecord = rec;
   const rows = [];
@@ -1895,27 +2071,31 @@ function renderHistDetail(rec) {
   if (vitalChips) rows.push(`<div class="ohd-row ohd-vitals-row"><span class="ohd-label">Vitals</span><div class="ohd-vitals">${vitalChips}</div></div>`);
 
   const textField = (label, val, cls = '') => val ? `<div class="ohd-row ${cls}"><span class="ohd-label">${label}</span><div class="ohd-value">${escapeAttr(val)}</div></div>` : '';
-  rows.push(textField('History / Complaints', rec.history, 'ohd-history-row'));
-  rows.push(textField('Previous Illness', rec.previous_illness, 'ohd-illness-row'));
-  rows.push(textField('Signs / Examination', rec.signs_examination, 'ohd-signs-row'));
-  rows.push(textField('Diagnosis', rec.diagnosis, 'ohd-diagnosis-row'));
+  // Multi-line bulleted fields — one white box per "- " line typed.
+  const listField = (label, val, cls = '') => {
+    if (!val) return '';
+    const lines = String(val).split('\n').map(l => l.replace(/^-\s*/, '').trim());
+    return `<div class="ohd-row ${cls}"><span class="ohd-label">${label}</span>${itemBoxes(lines)}</div>`;
+  };
+  rows.push(listField('History / Complaints', rec.history, 'ohd-history-row'));
+  rows.push(listField('Previous Illness', rec.previous_illness, 'ohd-illness-row'));
+  rows.push(listField('Signs / Examination', rec.signs_examination, 'ohd-signs-row'));
+  rows.push(listField('Diagnosis', rec.diagnosis, 'ohd-diagnosis-row'));
 
   if (invs.length) {
     const invLines = invs.map(i => [i.type, i.detail].filter(Boolean).join(' - ') + (i.comment ? ` → ${i.comment}` : ''));
-    rows.push(`<div class="ohd-row ohd-invest-row"><span class="ohd-label">Investigations Advised</span><div class="ohd-value">${bulletList(invLines)}</div></div>`);
+    rows.push(`<div class="ohd-row ohd-invest-row"><span class="ohd-label">Investigations Advised</span>${itemBoxes(invLines)}</div>`);
   }
   if (rec.previous_investigations) {
-    const prevLines = String(rec.previous_investigations).split('\n');
-    rows.push(`<div class="ohd-row ohd-previnvest-row"><span class="ohd-label">Previous Investigations</span><div class="ohd-value">${bulletList(prevLines)}</div></div>`);
+    rows.push(listField('Previous Investigations', rec.previous_investigations, 'ohd-previnvest-row'));
   }
 
   if (meds.length) {
     const medLines = meds.map(m => [m.name, [m.dose, m.frequency, m.duration].filter(Boolean).join(' | '), m.instruction].filter(Boolean).join(' — '));
-    rows.push(`<div class="ohd-row ohd-meds-row"><span class="ohd-label">Medicines</span><div class="ohd-value">${bulletList(medLines)}</div></div>`);
+    rows.push(`<div class="ohd-row ohd-meds-row"><span class="ohd-label">Medicines</span>${itemBoxes(medLines)}</div>`);
   }
   if (rec.advice) {
-    const adviceLines = String(rec.advice).split('\n').map(l => l.replace(/^-\s*/, ''));
-    rows.push(`<div class="ohd-row ohd-advice-row"><span class="ohd-label">Advice</span><div class="ohd-value">${bulletList(adviceLines)}</div></div>`);
+    rows.push(listField('Advice', rec.advice, 'ohd-advice-row'));
   }
   rows.push(textField('Follow-up Date', rec.follow_up_date, 'ohd-followup-row'));
 
@@ -1968,42 +2148,42 @@ async function saveOpdRecord(payload) {
   if (!data.success) throw new Error(data.message);
   if (!id) $('of2-id').value = data.id;
 
-  syncCustomOptions(payload.medicines, payload.investigations);
-  syncTextareaOptions(payload.history, 'history_complaint');
-  syncTextareaOptions(payload.previous_illness, 'previous_illness');
+  // Every newly typed suggestion value from this save goes out in ONE request.
+  const newOptions = [
+    ...collectCustomOptions(payload.medicines, payload.investigations),
+    ...collectTextareaOptions(payload.history, 'history_complaint'),
+    ...collectTextareaOptions(payload.previous_illness, 'previous_illness'),
+  ];
 
   // Mirror the follow-up date into the serve modal's quick field if it's still empty
   if ($('sf-followup') && !$('sf-followup').value.trim() && payload.follow_up_date) $('sf-followup').value = payload.follow_up_date;
 
-  // Keep the patient's profile in sync with the latest measured weight/height,
-  // so the next visit's OPD form (and the Add Patient page) autofills the current reading.
-  if (payload.patient_id && (payload.vitals?.weight || payload.vitals?.height)) {
-    const patchBody = {};
-    if (payload.vitals.weight) patchBody.weight_kg = payload.vitals.weight;
-    if (payload.vitals.height) patchBody.height_cm = payload.vitals.height;
-    fetch(`${PAT_API}/${payload.patient_id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patchBody),
-    }).then(() => {
-      const pat = state.allPatients.find(p => String(p.id) === String(payload.patient_id));
-      if (pat) Object.assign(pat, patchBody);
-    }).catch(e => console.error('[OPD] patient vitals sync failed', e));
-  }
-
-  // First-visit patients can have their Patient ID entered/corrected right here —
-  // push it back to the patient's profile so it's recorded going forward.
+  // Both profile write-backs below target the same patient record, so they're
+  // merged into a single PUT rather than two separate round-trips:
+  //  - latest measured weight/height, so the next visit's form autofills them
+  //  - a Patient ID entered/corrected here on a first visit
+  const patchBody = {};
+  if (payload.vitals?.weight) patchBody.weight_kg = payload.vitals.weight;
+  if (payload.vitals?.height) patchBody.height_cm = payload.vitals.height;
   const idField = $('of2-patient-id-visible');
-  if (payload.patient_id && idField && !idField.disabled && idField.value.trim()) {
-    fetch(`${PAT_API}/${payload.patient_id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ patient_id: idField.value.trim() }),
-    }).then(() => {
-      const pat = state.allPatients.find(p => String(p.id) === String(payload.patient_id));
-      if (pat) pat.patient_id = idField.value.trim();
-    }).catch(e => console.error('[OPD] patient ID sync failed', e));
+  if (idField && !idField.disabled && idField.value.trim()) patchBody.patient_id = idField.value.trim();
+
+  const background = [saveCustomOptionsBulk(newOptions)];
+  if (payload.patient_id && Object.keys(patchBody).length) {
+    background.push(
+      fetch(`${PAT_API}/${payload.patient_id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patchBody),
+      }).then(() => {
+        const pat = state.allPatients.find(p => String(p.id) === String(payload.patient_id));
+        if (pat) Object.assign(pat, patchBody);
+      }).catch(e => console.error('[OPD] patient profile sync failed', e))
+    );
   }
+  // These two are independent of each other and of the queue update that
+  // follows, so they run concurrently instead of one after another.
+  await Promise.all(background);
 
   return { id: id || data.id, ...payload };
 }
@@ -2208,6 +2388,23 @@ function printOpdRecord(rec, opts = {}) {
 function closeModal(id) {
   $(id).classList.remove('open');
   if (id === 'serve-modal') state.autoCallNext = false; // Reset flag if user cancels
+  syncBodyScrollLock();
+}
+
+// Freezes the page behind a modal. Without this, scrolling inside the OPD form
+// keeps scrolling the queue page underneath once the inner panel hits its end,
+// so closing the modal leaves the user somewhere else on the page entirely.
+// Driven off whether ANY modal is currently open, so overlapping modals (the
+// investigations popup opens on top of the OPD form) can't unlock too early.
+function syncBodyScrollLock() {
+  const anyOpen = document.querySelectorAll('.modal.open, .confirm-overlay.open').length > 0;
+  document.body.classList.toggle('modal-open', anyOpen);
+}
+
+// Opens a modal and applies the scroll lock in one step.
+function openModalEl(id) {
+  $(id).classList.add('open');
+  syncBodyScrollLock();
 }
 
 // ─── CALL PATIENT ──────────────────────────────────────
@@ -2383,7 +2580,7 @@ function confirmAction(icon, title, msg, fn) {
   $('confirm-title').textContent = title;
   $('confirm-msg').textContent = msg;
   state.pendingConfirm = fn;
-  $('confirm-overlay').classList.add('open');
+  openModalEl('confirm-overlay');
 }
 
 // ─── TOAST ─────────────────────────────────────────────

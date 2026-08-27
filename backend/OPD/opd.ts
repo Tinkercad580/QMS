@@ -13,12 +13,39 @@ db.createTable('opd_records', OPD_SCHEMA);
 // ─── Custom options (medicine/investigation field values typed by hand) ──
 // Remembered across patients so the next doctor sees them as a suggestion
 // instead of having to retype the same thing.
+// Every category at once, in a single query. The queue page needs eleven
+// different option lists to populate its dropdowns; fetching them one endpoint
+// at a time meant eleven HTTP + database round-trips on every page load. This
+// returns them all pre-grouped:
+//   { flat: { medicine: [...] }, context: { investigation_detail: { 'X-Ray': [...] } } }
+// Ordering matches the per-category endpoints — newest value first.
+router.get('/options', async (_req: Request, res: Response) => {
+    try {
+        const rows = await db.query(
+            `SELECT category, context, value FROM custom_options ORDER BY id DESC`
+        );
+        const flat: Record<string, string[]> = {};
+        const context: Record<string, Record<string, string[]>> = {};
+        rows.forEach((r: any) => {
+            if (r.context) {
+                ((context[r.category] ||= {})[r.context] ||= []).push(r.value);
+            } else {
+                (flat[r.category] ||= []).push(r.value);
+            }
+        });
+        res.json({ success: true, flat, context });
+    } catch (e: any) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 // Flat categories (medicine name, medicine dose/frequency/duration/route/
 // instruction, investigation type) — no context, one global list per category.
+// Kept for callers that need a single category on its own.
 router.get('/options/:category', async (req: Request, res: Response) => {
     try {
         const rows = await db.query(
-            `SELECT value FROM custom_options WHERE category = ? AND context = '' ORDER BY value`,
+            `SELECT value FROM custom_options WHERE category = ? AND context = '' ORDER BY id DESC`,
             [req.params.category]
         );
         res.json({ success: true, values: rows.map((r: any) => r.value) });
@@ -34,12 +61,55 @@ router.get('/options/:category', async (req: Request, res: Response) => {
 router.get('/options/:category/by-context', async (req: Request, res: Response) => {
     try {
         const rows = await db.query(
-            `SELECT context, value FROM custom_options WHERE category = ? AND context != '' ORDER BY value`,
+            `SELECT context, value FROM custom_options WHERE category = ? AND context != '' ORDER BY id DESC`,
             [req.params.category]
         );
         const grouped: Record<string, string[]> = {};
         rows.forEach((r: any) => { (grouped[r.context] ||= []).push(r.value); });
         res.json({ success: true, grouped });
+    } catch (e: any) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// Bulk variant of POST /options. One OPD save can produce a dozen-plus newly
+// typed values (every medicine field on every row, every investigation field,
+// every history/illness line). Sending them one-per-request meant a dozen
+// HTTP + database round-trips — costly against a remote database — so they all
+// go in here as a single multi-row INSERT instead.
+router.post('/options/bulk', async (req: Request, res: Response) => {
+    try {
+        const list: any[] = Array.isArray(req.body?.options) ? req.body.options : [];
+        // Dedupe within the batch as well — the same value can legitimately be
+        // typed on two medicine rows in one prescription.
+        const seen = new Set<string>();
+        const rows = list
+            .filter(o => o?.category?.trim() && o?.value?.trim())
+            .map(o => ({
+                category: String(o.category).trim(),
+                context: o.context ? String(o.context).trim() : '',
+                value: String(o.value).trim(),
+            }))
+            .filter(r => {
+                const key = `${r.category}|${r.context.toLowerCase()}|${r.value.toLowerCase()}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        if (!rows.length) return res.json({ success: true, inserted: 0 });
+
+        const now = new Date().toISOString();
+        const params: any[] = [];
+        const tuples = rows.map(r => {
+            params.push(r.category, r.context, r.value, now);
+            return '(?, ?, ?, ?)';
+        });
+        await db.exec(
+            `INSERT INTO custom_options (category, context, value, created_at)
+             VALUES ${tuples.join(', ')} ON CONFLICT DO NOTHING`,
+            params
+        );
+        res.status(201).json({ success: true, inserted: rows.length });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });
     }

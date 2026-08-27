@@ -52,6 +52,10 @@
   animation: dpPanelIn 0.14s ease;
 }
 .dp-panel.dp-align-right { left: auto; right: 0; }
+/* Opens upward when there isn't room below — e.g. the Follow-up Date field
+   near the bottom of the OPD modal, where a downward panel would be clipped
+   by the modal footer and force the doctor to scroll to pick a date. */
+.dp-panel.dp-align-top { top: auto; bottom: calc(100% + 6px); transform-origin: bottom left; }
 .dp-field.open .dp-panel { display: block; }
 
 @keyframes dpPanelIn {

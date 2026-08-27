@@ -248,11 +248,28 @@
       view = parseIso(input.value) || view || parseIso(todayIso());
       renderMonthGrid();
       field.classList.add('open');
-      // Flip to the left edge if the panel would overflow the viewport.
-      panel.classList.remove('dp-align-right');
+      // Flip the panel so it stays fully visible: to the left edge if it would
+      // overflow the right of the viewport, and upward if there isn't room
+      // below it. Inside a scrollable modal the usable space is that modal's
+      // visible box, not the whole window — otherwise a field near the bottom
+      // of the OPD form opens a panel hidden behind the footer.
+      panel.classList.remove('dp-align-right', 'dp-align-top');
       requestAnimationFrame(() => {
         const rect = panel.getBoundingClientRect();
         if (rect.right > window.innerWidth - 8) panel.classList.add('dp-align-right');
+
+        const scroller = field.closest('.opd-col-right, .modal-body, .modal-content') || document.documentElement;
+        const bounds = scroller === document.documentElement
+          ? { top: 0, bottom: window.innerHeight }
+          : scroller.getBoundingClientRect();
+
+        const fieldRect = field.getBoundingClientRect();
+        const spaceBelow = bounds.bottom - fieldRect.bottom;
+        const spaceAbove = fieldRect.top - bounds.top;
+        // Only flip up when below genuinely doesn't fit AND above fits better.
+        if (spaceBelow < rect.height + 8 && spaceAbove > spaceBelow) {
+          panel.classList.add('dp-align-top');
+        }
       });
     }
     function close() { field.classList.remove('open'); }
