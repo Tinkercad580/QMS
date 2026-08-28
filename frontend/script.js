@@ -203,8 +203,11 @@ function renderKPI(d) {
     $('kDone').textContent = fmtNum(d.total_done);
     $('kDoneSub').textContent = `Fully served patients`;
 
+    // The counter still sums NOSHOW + MISSED so historic entries recorded as
+    // no-shows are not silently dropped, but the label just says Missed —
+    // no-show can no longer be set anywhere in the app.
     $('kNoshow').textContent = fmtNum(d.total_noshow + d.total_missed);
-    $('kNoshowSub').textContent = `No-shows: ${d.total_noshow}, Missed: ${d.total_missed}`;
+    $('kNoshowSub').textContent = `Moved to end of queue`;
 
     $('kSms').textContent = fmtNum(d.total_sms);
     $('kSmsSub').textContent = `SMS sent in period`;

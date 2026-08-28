@@ -606,7 +606,6 @@ function updateStats() {
   $('s-waiting').textContent = q.filter(x => x.status === 'WAITING').length;
   $('s-serving').textContent = q.filter(x => x.status === 'SERVING' || x.status === 'CALLED').length;
   $('s-done').textContent = q.filter(x => x.status === 'DONE').length;
-  $('s-noshow').textContent = q.filter(x => x.status === 'NOSHOW').length;
   const rev = q.filter(x => x.status === 'DONE').reduce((a, x) => a + (x.amount_paid || 0), 0);
   $('s-revenue').textContent = `₹${rev.toLocaleString('en-IN')}`;
 }
