@@ -18,10 +18,37 @@ function generatePatientId(): string {
 // ✅ EXACT ORDER MATTERS — specific before /:id
 // ══════════════════════════════════════════════
 
-// 1️⃣ GET all patients
+// 1️⃣ GET patients
+//
+// This returned every patient, every column, plus an aggregate JOIN over the
+// whole visit history — and the queue page re-fetched it on a timer. That is
+// fine with a few dozen patients and steadily worse as the registry grows, so
+// two opt-in modes were added. Defaults are unchanged, so existing callers
+// keep working exactly as before.
+//
+//   ?basic=1          skip the visit JOIN and return only the columns needed
+//                     to identify a patient — used by the queue page, which
+//                     only needs name/age/gender/vitals for lookups.
+//   ?limit=&offset=   page through the registry; the response then also
+//                     carries `total` so the client can render pagination.
+const PATIENT_BASIC_COLUMNS =
+    'id, patient_id, full_name, mobile, age, gender, blood_group, weight_kg, height_cm, created_at';
+const MAX_PATIENT_LIMIT = 500;
+
 router.get('/', async (req: Request, res: Response) => {
     try {
-        const patients = await db.query(`
+        const basic = req.query.basic === '1' || req.query.basic === 'true';
+        const rawLimit = parseInt(req.query.limit as string, 10);
+        const rawOffset = parseInt(req.query.offset as string, 10);
+        const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), MAX_PATIENT_LIMIT) : null;
+        const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
+
+        const paging = limit !== null ? ` LIMIT ${limit} OFFSET ${offset}` : '';
+
+        const patients = basic
+            ? await db.query(
+                `SELECT ${PATIENT_BASIC_COLUMNS} FROM patients ORDER BY created_at DESC${paging}`)
+            : await db.query(`
             SELECT
                 p.*,
                 COUNT(v.id) AS visit_count,
@@ -29,9 +56,19 @@ router.get('/', async (req: Request, res: Response) => {
             FROM patients p
             LEFT JOIN patient_visits v ON v.patient_id = p.id
             GROUP BY p.id
-            ORDER BY p.created_at DESC
+            ORDER BY p.created_at DESC${paging}
         `);
-        res.json({ success: true, patients });
+
+        // Only counted when the caller is actually paging — an extra COUNT on
+        // every unpaged request would defeat the point.
+        const payload: Record<string, any> = { success: true, patients };
+        if (limit !== null) {
+            const [{ total }] = await db.query('SELECT COUNT(*)::int AS total FROM patients');
+            payload.total = total;
+            payload.limit = limit;
+            payload.offset = offset;
+        }
+        res.json(payload);
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });
     }

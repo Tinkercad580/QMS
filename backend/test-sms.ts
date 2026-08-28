@@ -1,8 +1,15 @@
+import 'dotenv/config';
 import axios from 'axios';
 
-const BASE_URL = 'http://192.168.0.105:8080'; 
-const USERNAME = 'sms';
-const PASSWORD = 'SivgsxdL';
+// Same environment configuration as the real service — see .env.example.
+const BASE_URL = process.env.SMS_GATEWAY_URL || '';
+const USERNAME = process.env.SMS_GATEWAY_USER || '';
+const PASSWORD = process.env.SMS_GATEWAY_PASSWORD || '';
+
+if (!BASE_URL || !USERNAME || !PASSWORD) {
+  console.error('❌ SMS gateway not configured. Set SMS_GATEWAY_URL, SMS_GATEWAY_USER and SMS_GATEWAY_PASSWORD in .env');
+  process.exit(1);
+}
 
 async function sendTestSms(phoneNumber: string, message: string) {
   const url = `${BASE_URL}/messages`; 

@@ -1,10 +1,19 @@
-// backend/utils/sms.service.ts
+// Sms/sms.service.ts
 import axios from 'axios';
 
-// It's best practice to use environment variables, but I've left your defaults here as fallbacks
-const BASE_URL = 'http://192.168.0.105:8080';
-const USERNAME = 'sms';
-const PASSWORD = 'SivgsxdL';
+// Gateway settings come from the environment — see .env.example. They used to
+// be hardcoded here, which put the gateway password into every clone of the
+// repository and into its git history.
+const BASE_URL = process.env.SMS_GATEWAY_URL || '';
+const USERNAME = process.env.SMS_GATEWAY_USER || '';
+const PASSWORD = process.env.SMS_GATEWAY_PASSWORD || '';
+
+// Logged once at startup rather than on every send, so a missing configuration
+// is obvious immediately instead of showing up as silent non-delivery.
+const SMS_CONFIGURED = Boolean(BASE_URL && USERNAME && PASSWORD);
+if (!SMS_CONFIGURED) {
+    console.warn('⚠️  SMS gateway not configured (SMS_GATEWAY_URL / _USER / _PASSWORD) — messages will be skipped.');
+}
 
 /**
  * Sends an SMS message to a specific phone number using the local SMS gateway.
@@ -13,6 +22,9 @@ const PASSWORD = 'SivgsxdL';
  * @returns A boolean indicating success (true) or failure (false)
  */
 export async function sendSms(phoneNumber: string, message: string): Promise<boolean> {
+    // Nothing to send through — bail out before attempting a request that
+    // would only fail after a timeout.
+    if (!SMS_CONFIGURED) return false;
     // Guard clause to prevent sending if phone number is missing
     if (!phoneNumber) {
         console.warn('⚠️ SMS Skipped: No phone number provided.');

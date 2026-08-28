@@ -9,6 +9,7 @@ import queueRouter from './QueueMang/queue';
 import appointmentRouter from './QueueMang/appointments';
 import opdRouter from './OPD/opd';
 import dashboardRouter from './dashboard/dashboard';
+import realtimeRouter from './realtime';
 
 
 const app = express();
@@ -30,6 +31,9 @@ app.use('/api/queue', queueRouter);
 app.use('/api/appointments', appointmentRouter);
 app.use('/api/opd', opdRouter);
 app.use('/api/dashboard', dashboardRouter);
+// Live updates (SSE) — clients subscribe at /api/realtime/events and refetch
+// when told something changed, instead of polling on a timer.
+app.use('/api/realtime', realtimeRouter);
 
 
 // ─── Serve add-pandc.html ──────────────────────────────────────

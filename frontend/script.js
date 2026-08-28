@@ -140,9 +140,12 @@ async function loadDashboard() {
 
     $('lastUpdated').textContent = 'Loading…';
     $('refreshBtn').querySelector('svg').classList.add('spin');
+    setKpiLoading(true);
 
     try {
-        const [kpi, trend, breakdown, doctors] = await Promise.all([
+        // (There used to be a fourth `doctors` variable destructured here with
+        // no matching request, so it was always undefined — removed.)
+        const [kpi, trend, breakdown] = await Promise.all([
             apiFetch(`/api/dashboard/kpi?from=${from}&to=${to}`),
             apiFetch(`/api/dashboard/trend?from=${from}&to=${to}&group=${$('revenueChartGroup').value}`),
             apiFetch(`/api/dashboard/breakdown?from=${from}&to=${to}`),
@@ -154,9 +157,18 @@ async function loadDashboard() {
     } catch (e) {
         toast('Failed to load dashboard: ' + e.message, 'error');
         console.error(e);
+        $('lastUpdated').textContent = 'Failed to load';
     } finally {
+        setKpiLoading(false);
         $('refreshBtn').querySelector('svg').classList.remove('spin');
     }
+}
+
+// Dims the KPI values and shows a shimmer while a range is being fetched, so
+// the numbers visibly refresh instead of sitting there looking current while
+// stale. renderKPI() overwrites the text, which clears the state naturally.
+function setKpiLoading(on) {
+    document.querySelectorAll('.kpi-card, .stat-card').forEach(c => c.classList.toggle('is-loading', !!on));
 }
 
 // ─── KPI RENDER ──────────────────────────────────────
@@ -783,7 +795,6 @@ function fullOpdRecordHtml(rec, p) {
     try { investigations = rec.investigations ? JSON.parse(rec.investigations) : []; } catch { investigations = []; }
 
     const age = p.age ? `${p.age}Y ${p.gender || ''}`.trim() : '—';
-    const opdNo = rec.id ? `OPD-${rec.id}` : '—';
 
     const medsHtml = medicines.length
         ? `<table class="rx-med-table">
@@ -809,7 +820,6 @@ function fullOpdRecordHtml(rec, p) {
       <div><b>Patient Name</b>${escHtml(rec.patient_name || p.full_name)}</div>
       <div><b>Age / Gender</b>${age}</div>
       <div><b>Date</b>${escHtml(rec.visit_date)}</div>
-      <div><b>OPD No.</b>${opdNo}</div>
     </div>
     ${(vitals.bp || vitals.pulse || vitals.weight || vitals.height) ? `
     <div class="rx-patient-strip">
@@ -937,21 +947,21 @@ function bindEvents() {
         });
     });
 
-    $('applyRange').addEventListener('click', () => {
+    $('applyRange').addEventListener('click', e => {
         State.from = $('dateFrom').value;
         State.to = $('dateTo').value;
         if (!State.from || !State.to) return toast('Select both dates', 'error');
         if (State.from > State.to) return toast('From must be before To', 'error');
-        loadDashboard();
+        withBusy(e.currentTarget, loadDashboard, 'Loading…');
     });
 
-    $('refreshBtn').addEventListener('click', loadDashboard);
+    $('refreshBtn').addEventListener('click', e => withBusy(e.currentTarget, loadDashboard, ''));
 
     // Day picker
     $('dayPicker').value = today();
-    $('loadDayBtn').addEventListener('click', () => {
+    $('loadDayBtn').addEventListener('click', e => {
         const d = $('dayPicker').value;
-        if (d) loadDaySnapshot(d);
+        if (d) withBusy(e.currentTarget, () => loadDaySnapshot(d), 'Loading…');
     });
 
     // Chart group change

@@ -205,6 +205,51 @@ class DynamicDatabaseService {
     return txStorage.getStore() ?? DynamicDatabaseService.getPool();
   }
 
+  // A serverless Postgres (Neon) scales its compute to zero when idle, and the
+  // first connections opened against a cold instance can be dropped outright —
+  // typically surfacing as a connection error with an empty message. That was
+  // harmless while every query ran one after another (the first call warmed the
+  // connection for the rest), but became visible once independent queries
+  // started being issued concurrently: several would open their own connection
+  // at the same moment and all but one could fail.
+  //
+  // Only connection-level failures are retried, and never inside a transaction
+  // (the client there is already broken and the transaction must roll back).
+  // A genuine SQL error — bad column, constraint violation — is rethrown at
+  // once so real bugs still surface immediately.
+  private static isTransient(error: any): boolean {
+    if (!error) return false;
+    const code = String(error.code || '');
+    // Postgres class 08 = connection exception; 57P01/57P03 = admin shutdown /
+    // cannot connect now. ECONNRESET/EPIPE/ETIMEDOUT are socket-level drops.
+    if (/^08/.test(code) || code === '57P01' || code === '57P03') return true;
+    if (['ECONNRESET', 'EPIPE', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNREFUSED'].includes(code)) return true;
+    const msg = String(error.message || '').toLowerCase();
+    if (!msg) return true;   // empty-message failures are the cold-start drops
+    return msg.includes('connection terminated')
+      || msg.includes('connection closed')
+      || msg.includes('server closed the connection')
+      || msg.includes('timeout exceeded when trying to connect');
+  }
+
+  private async runWithRetry<T>(label: string, run: () => Promise<T>): Promise<T> {
+    const inTransaction = !!txStorage.getStore();
+    let lastError: any;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await run();
+      } catch (error: any) {
+        lastError = error;
+        if (inTransaction || !DynamicDatabaseService.isTransient(error)) throw error;
+        if (attempt === 2) break;
+        const backoffMs = 150 * (attempt + 1);
+        console.warn(`↻ ${this.dbName}.${label} transient failure — retry ${attempt + 1}/2 in ${backoffMs}ms`);
+        await new Promise(r => setTimeout(r, backoffMs));
+      }
+    }
+    throw lastError;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   // PUBLIC METHODS - DYNAMIC QUERIES
   // ═══════════════════════════════════════════════════════════════════════
@@ -321,11 +366,12 @@ class DynamicDatabaseService {
     await this.ready;
     const startTime = Date.now();
     try {
-      const result = await this.getExecutor().query(toPgPlaceholders(sql), params || []);
+      const result = await this.runWithRetry('query', () =>
+        this.getExecutor().query(toPgPlaceholders(sql), params || []));
       this.logSlowQuery('query(custom)', Date.now() - startTime);
       return result.rows;
     } catch (error: any) {
-      console.error(`❌ ${this.dbName}.query() failed:`, error.message);
+      console.error(`❌ ${this.dbName}.query() failed:`, error.message || '(no message — connection dropped)');
       throw error;
     }
   }

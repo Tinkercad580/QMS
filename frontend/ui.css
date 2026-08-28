@@ -1,0 +1,132 @@
+/* ═══════════════════════════════════════════════════
+   ui.css — shared UI chrome for every page
+   Loading bar, busy/pending states, scroll lock, custom dropdowns.
+   Uses the same CSS variables each page already defines, with fallbacks so
+   it still looks right on a page that defines fewer of them.
+   ═══════════════════════════════════════════════════ */
+
+/* ─── Top progress bar ─────────────────────────────── */
+.app-progress {
+  position: fixed; top: 0; left: 0; right: 0; height: 3px;
+  z-index: 9999; opacity: 0; pointer-events: none;
+  transition: opacity .2s ease;
+}
+.app-progress.active { opacity: 1; }
+.app-progress-fill {
+  height: 100%; width: 0;
+  background: linear-gradient(90deg, var(--primary, #2563eb), #38bdf8);
+  box-shadow: 0 0 8px rgba(37, 99, 235, .5);
+  transition: width .25s ease;
+}
+/* Creeps toward 90% while waiting — never reaching the end, because the
+   response time isn't known — then snaps to 100% on completion. */
+.app-progress.active .app-progress-fill { width: 90%; transition: width 8s cubic-bezier(.1, .8, .2, 1); }
+.app-progress.done .app-progress-fill { width: 100%; transition: width .2s ease; }
+
+/* ─── Busy / pending states ────────────────────────── */
+.btn-spinner {
+  display: inline-block; width: 13px; height: 13px; margin-right: 7px;
+  vertical-align: -2px; border-radius: 50%;
+  border: 2px solid currentColor; border-top-color: transparent;
+  animation: btn-spin .6s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+.is-busy { opacity: .75; cursor: progress; }
+button:disabled { cursor: not-allowed; }
+.is-pending { opacity: .55; cursor: progress; pointer-events: none; transition: opacity .15s ease; }
+
+/* ─── Modal scroll behaviour ───────────────────────── */
+/* overflow alone (not position:fixed) so the page keeps its scroll position. */
+body.modal-open { overflow: hidden; }
+/* Stop scroll chaining: when one of these hits its end, the wheel must not
+   start scrolling whatever is behind it. */
+.modal-body, .drawer-body, .cs-panel, .combo-panel,
+.opd-col-right, .opd-col-left, .opd-history-panel,
+.appt-list, .patient-search-results { overscroll-behavior: contain; }
+
+/* ─── Skeleton placeholders ────────────────────────── */
+.skel {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e6ecf3 37%, #f1f5f9 63%);
+  background-size: 400% 100%;
+  animation: skel 1.3s ease infinite;
+  border-radius: 6px;
+}
+@keyframes skel { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+.skel-line { height: 12px; margin: 6px 0; }
+.skel-card { height: 78px; border-radius: 10px; }
+.skeleton-stack { display: flex; flex-direction: column; gap: 10px; padding: 4px; }
+
+/* ─── Custom dropdown ──────────────────────────────── */
+.cs-field { position: relative; display: inline-block; width: 100%; }
+/* The real <select> stays in the DOM as the source of truth, just not visible. */
+.cs-field > select {
+  position: absolute; opacity: 0; width: 0; height: 0;
+  pointer-events: none; margin: 0; padding: 0; border: 0;
+}
+
+.cs-display {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; height: 38px; padding: 0 12px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface, #fff);
+  color: var(--text, #0f172a);
+  font-size: 13px; font-weight: 500; text-align: left;
+  cursor: pointer; transition: all 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cs-display:hover:not(:disabled) { border-color: #cbd5e1; background: var(--surface-2, #f8fafc); }
+.cs-display:focus-visible { outline: none; border-color: var(--primary, #2563eb); box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+.cs-field.open .cs-display { border-color: var(--primary, #2563eb); box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+.cs-display:disabled, .cs-field.cs-disabled .cs-display { opacity: .6; cursor: not-allowed; background: var(--surface-2, #f1f5f9); }
+.cs-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-display.cs-placeholder .cs-value { color: var(--text-faint, #94a3b8); font-weight: 400; }
+.cs-caret { width: 10px; height: 6px; flex-shrink: 0; color: var(--text-faint, #94a3b8); transition: transform 160ms ease; }
+.cs-field.open .cs-caret { transform: rotate(180deg); color: var(--primary, #2563eb); }
+
+/* Compact variant for toolbar filters, matching the old .filter-select size. */
+.cs-field.cs-compact { width: auto; min-width: 130px; }
+.cs-field.cs-compact .cs-display { height: 32px; font-size: 12px; padding: 0 10px; background: var(--surface-2, #f1f5f9); }
+
+.cs-panel {
+  display: none; position: absolute; top: calc(100% + 5px); left: 0;
+  min-width: 100%; width: max-content; max-width: min(320px, 90vw);
+  max-height: 260px; overflow-y: auto;
+  z-index: 900;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius, 10px);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, .16);
+  padding: 4px;
+  animation: csIn .14s ease;
+}
+.cs-field.open .cs-panel { display: block; }
+.cs-panel.cs-align-top { top: auto; bottom: calc(100% + 5px); }
+@keyframes csIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+.cs-option {
+  padding: 8px 10px; border-radius: var(--radius-sm, 6px);
+  font-size: 13px; color: var(--text, #0f172a);
+  cursor: pointer; white-space: nowrap;
+  transition: background 120ms ease, color 120ms ease;
+}
+.cs-option:hover { background: var(--primary-l, #eff6ff); color: var(--primary, #2563eb); }
+.cs-option.selected { background: var(--primary, #2563eb); color: #fff; font-weight: 600; }
+.cs-option.selected:hover { background: var(--primary-h, #1d4ed8); color: #fff; }
+.cs-option.disabled { opacity: .45; cursor: not-allowed; }
+.cs-option.disabled:hover { background: none; color: var(--text, #0f172a); }
+
+/* KPI / stat cards shimmer their value while a new range is loading, so the
+   numbers visibly refresh instead of sitting there looking already-current. */
+.kpi-card.is-loading .kpi-value,
+.kpi-card.is-loading .kpi-val,
+.stat-card.is-loading .stat-val {
+  color: transparent !important;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #f1f5f9 25%, #e6ecf3 37%, #f1f5f9 63%);
+  background-size: 400% 100%;
+  animation: skel 1.3s ease infinite;
+}
+.kpi-card.is-loading { transition: opacity .15s ease; }
+
+/* Table skeleton rows (patient registry first load). */
+tr.skel-row td { padding: 12px 14px; border: none; }

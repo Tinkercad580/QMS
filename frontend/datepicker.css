@@ -42,7 +42,7 @@
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  z-index: 200;
+  z-index: 900;
   width: 260px;
   background: #fff;
   border: 1px solid var(--border, #e2e8f0);

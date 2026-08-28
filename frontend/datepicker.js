@@ -214,6 +214,7 @@
         input.dispatchEvent(new Event('change', { bubbles: true }));
         close();
       });
+      reposition();   // day grid height varies by month (5 vs 6 week rows)
     }
 
     // Quick month-jump grid — click the header title to pick any month of
@@ -240,39 +241,34 @@
           renderMonthGrid();
         });
       });
+      reposition();   // the year grid is a different height to the day grid
     }
 
+    // Positions the calendar in viewport coordinates while it's open, so a
+    // modal's overflow can't clip it (which used to leave the calendar
+    // half-cut or hidden when the field sat low in a dialog).
+    let floating = null;
+
     function open() {
-      document.querySelectorAll('.dp-field.open').forEach(f => { if (f !== field) f.classList.remove('open'); });
+      document.querySelectorAll('.dp-field.open').forEach(f => { if (f !== field) f._dpClose?.(); });
       showingYearGrid = false;
       view = parseIso(input.value) || view || parseIso(todayIso());
       renderMonthGrid();
       field.classList.add('open');
-      // Flip the panel so it stays fully visible: to the left edge if it would
-      // overflow the right of the viewport, and upward if there isn't room
-      // below it. Inside a scrollable modal the usable space is that modal's
-      // visible box, not the whole window — otherwise a field near the bottom
-      // of the OPD form opens a panel hidden behind the footer.
       panel.classList.remove('dp-align-right', 'dp-align-top');
-      requestAnimationFrame(() => {
-        const rect = panel.getBoundingClientRect();
-        if (rect.right > window.innerWidth - 8) panel.classList.add('dp-align-right');
 
-        const scroller = field.closest('.opd-col-right, .modal-body, .modal-content') || document.documentElement;
-        const bounds = scroller === document.documentElement
-          ? { top: 0, bottom: window.innerHeight }
-          : scroller.getBoundingClientRect();
-
-        const fieldRect = field.getBoundingClientRect();
-        const spaceBelow = bounds.bottom - fieldRect.bottom;
-        const spaceAbove = fieldRect.top - bounds.top;
-        // Only flip up when below genuinely doesn't fit AND above fits better.
-        if (spaceBelow < rect.height + 8 && spaceAbove > spaceBelow) {
-          panel.classList.add('dp-align-top');
-        }
-      });
+      if (floating) floating.destroy();
+      floating = typeof positionFloatingPanel === 'function'
+        ? positionFloatingPanel(field, panel, { gap: 6, matchWidth: false })
+        : null;
     }
-    function close() { field.classList.remove('open'); }
+    function close() {
+      field.classList.remove('open');
+      if (floating) { floating.destroy(); floating = null; }
+    }
+    // Re-measure after the panel's contents change size — switching between the
+    // day grid and the year picker changes its height.
+    function reposition() { if (floating) floating.update(); }
     function toggle() { field.classList.contains('open') ? close() : open(); }
 
     display.addEventListener('click', () => {
@@ -293,14 +289,16 @@
   }
 
   // Click-outside and Escape close whichever panel is open — one delegated
-  // listener covers every date field on the page.
+  // listener covers every date field on the page. These go through each
+  // field's own close() rather than stripping the class directly, so the
+  // panel's scroll/resize repositioning listeners are detached too.
   document.addEventListener('click', e => {
     document.querySelectorAll('.dp-field.open').forEach(field => {
-      if (!field.contains(e.target)) field.classList.remove('open');
+      if (!field.contains(e.target)) field._dpClose?.();
     });
   });
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') document.querySelectorAll('.dp-field.open').forEach(f => f.classList.remove('open'));
+    if (e.key === 'Escape') document.querySelectorAll('.dp-field.open').forEach(f => f._dpClose?.());
   });
 
   document.addEventListener('DOMContentLoaded', () => enhanceAll());

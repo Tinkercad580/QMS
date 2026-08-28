@@ -2,6 +2,7 @@
 import { Router, Request, Response } from 'express';
 import DynamicDatabaseService from '../../database_Manager/database.service';
 import { QUEUE_SCHEMA, OPD_SCHEMA } from '../../database_Manager/database.schemas';
+import { broadcast } from '../realtime';
 
 const router = Router();
 // Stored in the same 'queue' database file, alongside queue_entries/appointments.
@@ -198,6 +199,7 @@ router.post('/', async (req: Request, res: Response) => {
         };
 
         const id = await db.insert('opd_records', data);
+        broadcast('opd');
         res.status(201).json({ success: true, id, message: 'OPD record saved' });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });
@@ -223,6 +225,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         if (body.vitals !== undefined) updates.vitals = body.vitals ? JSON.stringify(body.vitals) : null;
 
         await db.update('opd_records', updates, 'id = ?', [id]);
+        broadcast('opd');
         res.json({ success: true, message: 'OPD record updated' });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });
@@ -236,6 +239,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
         const existing = await db.selectOne('opd_records', 'id = ?', [id]);
         if (!existing) return res.status(404).json({ success: false, message: 'Not found' });
         await db.delete('opd_records', 'id = ?', [id]);
+        broadcast('opd');
         res.json({ success: true, message: 'OPD record deleted' });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });

@@ -3,6 +3,7 @@ import { Router, Request, Response } from 'express';
 import DynamicDatabaseService from '../../database_Manager/database.service';
 import { QUEUE_SCHEMA } from '../../database_Manager/database.schemas';
 import { sendSms } from '../../Sms/sms.service';
+import { broadcast } from '../realtime';
 import { findOrCreatePatient } from '../utils/patient.helper';
 
 const router = Router();
@@ -111,6 +112,7 @@ router.post('/', async (req: Request, res: Response) => {
                 .catch(err => console.error("SMS Service error:", err));
         }
 
+        broadcast('appointments');
         res.status(201).json({ success: true, id, message: 'Appointment booked' });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });
@@ -132,6 +134,7 @@ router.put('/:id', async (req: Request, res: Response) => {
             });
 
         await db.update('appointments', updates, 'id = ?', [id]);
+        broadcast('appointments');
         res.json({ success: true, message: 'Appointment updated' });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });
@@ -145,6 +148,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
         const existing = await db.selectOne('appointments', 'id = ?', [id]);
         if (!existing) return res.status(404).json({ success: false, message: 'Not found' });
         await db.delete('appointments', 'id = ?', [id]);
+        broadcast('appointments');
         res.json({ success: true, message: 'Appointment cancelled' });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });

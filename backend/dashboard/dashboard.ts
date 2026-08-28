@@ -31,8 +31,13 @@ router.get('/kpi', async (req: Request, res: Response) => {
     const { from, to } = req.query as Record<string, string>;
     if (!from || !to) return res.status(400).json({ success: false, message: 'from and to required' });
 
-    // Queue stats (fee, collected, walkins, done, noshow, missed, waiting)
-    const queueStats = await queueDb.query(`
+    // These six aggregates are completely independent of one another, so they
+    // are issued together rather than one after the next. Against a remote
+    // database each was its own ~100ms round-trip, making the KPI row alone
+    // take roughly six times longer than it needed to.
+    const [queueStats, apptStats, smsStats, patientTotal, newPatients, visitStats] = await Promise.all([
+      // Queue stats (fee, collected, walkins, done, noshow, missed, waiting)
+      queueDb.query(`
       SELECT
       COUNT(*) AS total_queue,
       SUM(fee) AS total_fee,
@@ -45,40 +50,41 @@ router.get('/kpi', async (req: Request, res: Response) => {
       SUM(CASE WHEN status IN ('WAITING','CALLED','SERVING') THEN 1 ELSE 0 END) AS total_waiting
       FROM queue_entries
       WHERE queue_date BETWEEN ? AND ?
-      `, [from, to]);
+      `, [from, to]),
 
-    // Appointment count
-    const apptStats = await queueDb.query(`
+      // Appointment count
+      queueDb.query(`
       SELECT COUNT(*) AS total_appointments
       FROM appointments
       WHERE appt_date BETWEEN ? AND ?
-    `, [from, to]);
+    `, [from, to]),
 
-    // SMS count (IST offset)
-    const smsStats = await queueDb.query(`
+      // SMS count (IST offset)
+      queueDb.query(`
       SELECT COUNT(*) AS total_sms
       FROM sms_logs
       WHERE ${IST_DATE('created_at')} BETWEEN ? AND ?
-    `, [from, to]);
+    `, [from, to]),
 
-    // Total patients (all-time)
-    const patientTotal = await patientDb.query(`
+      // Total patients (all-time)
+      patientDb.query(`
       SELECT COUNT(*) AS total_patients FROM patients
-    `, []);
+    `, []),
 
-    // New patients in range (IST offset)
-    const newPatients = await patientDb.query(`
+      // New patients in range (IST offset)
+      patientDb.query(`
       SELECT COUNT(*) AS new_patients
       FROM patients
       WHERE ${IST_DATE('created_at')} BETWEEN ? AND ?
-    `, [from, to]);
+    `, [from, to]),
 
-    // Total visit records in range (IST offset)
-    const visitStats = await patientDb.query(`
+      // Total visit records in range (IST offset)
+      patientDb.query(`
       SELECT COUNT(*) AS total_visits
       FROM patient_visits
       WHERE ${IST_DATE('visit_date')} BETWEEN ? AND ?
-    `, [from, to]);
+    `, [from, to]),
+    ]);
 
     const q = queueStats[0] || {};
     const data = {
@@ -150,26 +156,30 @@ router.get('/breakdown', async (req: Request, res: Response) => {
     const { from, to } = req.query as Record<string, string>;
     if (!from || !to) return res.status(400).json({ success: false, message: 'from and to required' });
 
-    const visitTypes = await queueDb.query(`
+    // Three independent GROUP BYs over the same table — run together rather
+    // than as three back-to-back round-trips.
+    const [visitTypes, statuses, priorities] = await Promise.all([
+      queueDb.query(`
       SELECT COALESCE(visit_type, 'Unknown') AS label, COUNT(*) AS count
       FROM queue_entries
       WHERE queue_date BETWEEN ? AND ? AND visit_type IS NOT NULL AND visit_type != ''
       GROUP BY label ORDER BY count DESC LIMIT 10
-    `, [from, to]);
+    `, [from, to]),
 
-    const statuses = await queueDb.query(`
+      queueDb.query(`
       SELECT status AS label, COUNT(*) AS count
       FROM queue_entries
       WHERE queue_date BETWEEN ? AND ?
       GROUP BY status ORDER BY count DESC
-    `, [from, to]);
+    `, [from, to]),
 
-    const priorities = await queueDb.query(`
+      queueDb.query(`
       SELECT priority AS label, COUNT(*) AS count
       FROM queue_entries
       WHERE queue_date BETWEEN ? AND ?
       GROUP BY priority ORDER BY count DESC
-    `, [from, to]);
+    `, [from, to]),
+    ]);
 
     res.json({
       success: true,

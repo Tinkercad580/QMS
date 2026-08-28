@@ -9,79 +9,9 @@ const PAT_API = `${API_BASE}/api/patients`;
 const OPD_API = `${API_BASE}/api/opd`;
 const DEFAULT_REFERRED_BY = 'Dr. Jayaraja Puthran';
 
-// ─── Global loading feedback ───────────────────────────────
-// The database lives in another region, so every request costs a real
-// round-trip. Rather than sprinkle spinners through each call site, window.fetch
-// is wrapped once to count in-flight requests and drive a thin progress bar at
-// the top of the page — so any wait, anywhere, is visible instead of feeling
-// like the app froze. Background auto-refreshes opt out via { quiet: true }.
-(function initGlobalLoadingBar() {
-  const nativeFetch = window.fetch.bind(window);
-  let inFlight = 0;
-  let bar = null;
-  let hideTimer = null;
+// Loading bar, withBusy(), withPending() and syncBodyScrollLock() now live in
+// the shared ui.js, loaded before this file and used by every page.
 
-  const getBar = () => (bar ||= document.getElementById('app-progress'));
-
-  const show = () => {
-    const el = getBar();
-    if (!el) return;
-    clearTimeout(hideTimer);
-    el.classList.add('active');
-    el.classList.remove('done');
-  };
-  const hide = () => {
-    const el = getBar();
-    if (!el) return;
-    el.classList.add('done');
-    hideTimer = setTimeout(() => el.classList.remove('active', 'done'), 260);
-  };
-
-  window.fetch = (input, init = {}) => {
-    const quiet = init.quiet === true;
-    if (quiet) delete init.quiet;
-    if (!quiet) { if (inFlight === 0) show(); inFlight++; }
-    return nativeFetch(input, init).finally(() => {
-      if (!quiet) { inFlight = Math.max(0, inFlight - 1); if (inFlight === 0) hide(); }
-    });
-  };
-})();
-
-// Busy state for things that aren't buttons — a queue card, an appointment row.
-// Marks the element as pending (dimmed, wait cursor) and blocks re-entry, so
-// clicking a card twice can't fire the same action twice.
-async function withPending(el, fn) {
-  if (!el) return fn();
-  if (el.dataset.pending === '1') return;
-  el.dataset.pending = '1';
-  el.classList.add('is-pending');
-  try {
-    return await fn();
-  } finally {
-    el.dataset.pending = '';
-    el.classList.remove('is-pending');
-  }
-}
-
-// Runs an async action with the button locked and showing a spinner, so a slow
-// save can't be double-submitted and the click visibly registers straight away.
-async function withBusy(btn, fn, busyLabel) {
-  if (!btn) return fn();
-  if (btn.dataset.busy === '1') return;          // already running — ignore re-click
-  const original = btn.innerHTML;
-  btn.dataset.busy = '1';
-  btn.disabled = true;
-  btn.classList.add('is-busy');
-  btn.innerHTML = `<span class="btn-spinner"></span>${busyLabel || btn.textContent.trim()}`;
-  try {
-    return await fn();
-  } finally {
-    btn.dataset.busy = '';
-    btn.disabled = false;
-    btn.classList.remove('is-busy');
-    btn.innerHTML = original;
-  }
-}
 
 const CLINIC_INFO = {
   name: 'Jai Ganesh Nursing Home',
@@ -224,7 +154,7 @@ let state = {
   filterStatus: '',
   filterType: '',
   pendingConfirm: null,
-  autoRefreshTimer: null,
+  liveUpdates: null,
   autoCallNext: false,
   investigationOptions: [...INVESTIGATION_OPTIONS],
   medicineOptions: [...MED_NAME_OPTIONS],
@@ -250,13 +180,22 @@ document.addEventListener('DOMContentLoaded', () => {
   startClock();
   // Shimmer placeholders while the first load is in flight, so the queue area
   // reads as "loading" rather than as an empty queue.
-  $('queue-list').innerHTML = `<div class="queue-skeleton">${'<div class="skel-card"></div>'.repeat(4)}</div>`;
+  $('queue-list').innerHTML = `<div class="skeleton-stack">${'<div class="skel skel-card"></div>'.repeat(4)}</div>`;
   loadAll();
   bindEvents();
   bindTextareaAutosize();
   loadCustomOptions();
-  // Auto-refresh every 30 seconds
-  state.autoRefreshTimer = setInterval(() => loadAll(true), 30000);
+
+  // Live updates instead of a blind 30-second poll: the server pushes a note
+  // whenever the queue, appointments or an OPD record change, and only then
+  // does this page refetch. Reception adding a walk-in now shows on the
+  // doctor's screen immediately rather than up to half a minute later.
+  // subscribeToChanges keeps a slow fallback poll for the case where the
+  // stream can't be established, and pauses it while the tab is hidden.
+  state.liveUpdates = subscribeToChanges(
+    () => loadAll(true),
+    { topics: ['queue', 'appointments', 'opd', 'poll', 'visible'] }
+  );
 });
 
 // ─── Custom Investigation / Medicine options ────────────
@@ -435,8 +374,21 @@ function initCombobox(input, getOptions) {
       });
     });
   };
-  const openCombo = () => { render(); panel.classList.add('open'); };
-  const closeCombo = () => panel.classList.remove('open');
+  // Pinned to the viewport while open so the scrolling OPD column / modal body
+  // can't clip the suggestion list (see positionFloatingPanel in ui.js).
+  let comboFloating = null;
+  const openCombo = () => {
+    render();
+    panel.classList.add('open');
+    if (comboFloating) comboFloating.destroy();
+    comboFloating = typeof positionFloatingPanel === 'function'
+      ? positionFloatingPanel(wrap, panel, { gap: 4 })
+      : null;
+  };
+  const closeCombo = () => {
+    panel.classList.remove('open');
+    if (comboFloating) { comboFloating.destroy(); comboFloating = null; }
+  };
 
   input.addEventListener('focus', openCombo);
   input.addEventListener('input', openCombo);
@@ -484,8 +436,21 @@ function initTextareaCombo(textarea, getOptions) {
       });
     });
   };
-  const openCombo = () => { render(); panel.classList.add('open'); };
-  const closeCombo = () => panel.classList.remove('open');
+  // Pinned to the viewport while open so the scrolling OPD column / modal body
+  // can't clip the suggestion list (see positionFloatingPanel in ui.js).
+  let comboFloating = null;
+  const openCombo = () => {
+    render();
+    panel.classList.add('open');
+    if (comboFloating) comboFloating.destroy();
+    comboFloating = typeof positionFloatingPanel === 'function'
+      ? positionFloatingPanel(wrap, panel, { gap: 4 })
+      : null;
+  };
+  const closeCombo = () => {
+    panel.classList.remove('open');
+    if (comboFloating) { comboFloating.destroy(); comboFloating = null; }
+  };
 
   textarea.addEventListener('focus', openCombo);
   textarea.addEventListener('input', openCombo);
@@ -612,7 +577,9 @@ async function loadAppointments(silent = false, { render = true } = {}) {
 // ─── LOAD PATIENTS (for search) ────────────────────────
 async function loadPatients(silent = false) {
   try {
-    const res = await fetch(PAT_API, { quiet: silent });
+    // `basic=1` skips the visit-history JOIN and the columns this page never
+    // reads — it only needs to look up a queued patient's age/gender/vitals.
+    const res = await fetch(`${PAT_API}?basic=1`, { quiet: silent });
     const data = await res.json();
     if (data.success) {
       state.allPatients = data.patients || [];
@@ -1628,8 +1595,7 @@ function printInvestigationAdvice(rec) {
     <tr><td>${i.type}</td><td>${i.detail || ''}</td><td>${i.instruction || ''}</td></tr>
   `).join('');
 
-  const win = window.open('', '_blank', 'width=700,height=800');
-  win.document.write(`
+  openPrintWindow(`
     <!DOCTYPE html><html><head><title>Investigation Advice — ${rec.patient_name}</title>
     <style>
       body { font-family: 'Segoe UI', Arial, sans-serif; padding: 30px; color: #1e293b; }
@@ -1680,10 +1646,8 @@ function printInvestigationAdvice(rec) {
           Doctor Signature
         </div>
       </div>
-      <script>window.onload = () => window.print();</script>
     </body></html>
   `);
-  win.document.close();
 }
 
 async function openOpdModal(entry) {
@@ -1910,8 +1874,13 @@ function addInvestigationRow(containerId, inv = {}, opts = {}) {
 // X-Ray and CBC are needed for nearly every patient — pre-add them (checked)
 // so the doctor only has to uncheck the ones that don't apply, instead of
 // typing them out every single visit.
+// The two investigations pre-filled on every new visit, in the order they
+// should appear in the form.
+const DEFAULT_INVESTIGATION_TYPES = ['CBC', 'X-Ray'];
+
 function addDefaultInvestigationRows(containerId, opts = {}) {
-  ['X-Ray', 'CBC'].forEach(type => addInvestigationRow(containerId, { type, checked: true }, { ...opts, checkable: true }));
+  DEFAULT_INVESTIGATION_TYPES.forEach(type =>
+    addInvestigationRow(containerId, { type, checked: true }, { ...opts, checkable: true }));
 }
 
 function collectInvestigations(containerId) {
@@ -2063,7 +2032,8 @@ function renderHistDetail(rec) {
 
   state.viewingHistRecord = rec;
   const rows = [];
-  rows.push(`<div class="ohd-row"><span class="ohd-label">Visit Date</span><div class="ohd-value">${rec.visit_date || '—'} · Referred by ${rec.doctor_name || DEFAULT_REFERRED_BY}</div>
+  rows.push(`<div class="ohd-row"><span class="ohd-label">Visit Date</span>
+    <div class="ohd-items"><div class="ohd-item">${rec.visit_date || '—'} · Referred by ${escapeAttr(rec.doctor_name || DEFAULT_REFERRED_BY)}</div></div>
     <button type="button" class="opd-view-page-btn" onclick="viewOpdRecordPage(state.viewingHistRecord)">📄 View as Full Page</button></div>`);
 
   const vitalChips = ['bp', 'pulse', 'weight', 'height'].filter(k => vitals[k])
@@ -2097,7 +2067,9 @@ function renderHistDetail(rec) {
   if (rec.advice) {
     rows.push(listField('Advice', rec.advice, 'ohd-advice-row'));
   }
-  rows.push(textField('Follow-up Date', rec.follow_up_date, 'ohd-followup-row'));
+  // Boxed like every other section rather than bare text on the tinted card,
+  // so the whole panel reads consistently top to bottom.
+  rows.push(listField('Follow-up Date', rec.follow_up_date, 'ohd-followup-row'));
 
   detail.innerHTML = rows.filter(Boolean).join('');
 }
@@ -2287,7 +2259,6 @@ function viewOpdRecordPage(rec) {
 function printOpdRecord(rec, opts = {}) {
   const autoPrint = opts.autoPrint !== false;
   const age = (rec.age ? `${rec.age}Y ${rec.gender || ''}`.trim() : '') || ($('opd-strip-age').textContent !== '—' ? $('opd-strip-age').textContent : '');
-  const opdNo = rec.id ? `OPD-${rec.id}` : '—';
   const medsHtml = (rec.medicines || []).length
     ? `<table class="rx-med-table">
         <thead><tr><th>Medicine</th><th>Dose</th><th>Frequency</th><th>Duration</th><th>Route</th><th>Instruction</th></tr></thead>
@@ -2306,8 +2277,7 @@ function printOpdRecord(rec, opts = {}) {
       </table>`
     : '<p class="rx-empty">No investigations advised.</p>';
 
-  const win = window.open('', '_blank', 'width=800,height=900');
-  win.document.write(`
+  openPrintWindow(`
     <!DOCTYPE html><html><head><title>Prescription — ${rec.patient_name}</title>
     <style>
       body { font-family: 'Segoe UI', Arial, sans-serif; padding: 30px; color: #1e293b; }
@@ -2352,7 +2322,6 @@ function printOpdRecord(rec, opts = {}) {
         <div><b>Patient Name</b>${rec.patient_name}</div>
         <div><b>Age / Gender</b>${age || '—'}</div>
         <div><b>Date</b>${rec.visit_date}</div>
-        <div><b>OPD No.</b>${opdNo}</div>
       </div>
       ${rec.vitals && (rec.vitals.bp || rec.vitals.pulse || rec.vitals.weight || rec.vitals.height) ? `
       <div class="rx-patient-strip">
@@ -2379,10 +2348,8 @@ function printOpdRecord(rec, opts = {}) {
       </div>
 
       ${autoPrint ? '' : '<button id="rx-print-btn" style="margin-top:20px; padding:10px 18px; font-size:13px; font-weight:600; border:none; border-radius:6px; background:#0d9488; color:#fff; cursor:pointer;" onclick="window.print()">🖨️ Print This Page</button>'}
-      <script>${autoPrint ? 'window.onload = () => window.print();' : ''}</script>
     </body></html>
-  `);
-  win.document.close();
+  `, { autoPrint });
 }
 
 function closeModal(id) {
@@ -2391,15 +2358,8 @@ function closeModal(id) {
   syncBodyScrollLock();
 }
 
-// Freezes the page behind a modal. Without this, scrolling inside the OPD form
-// keeps scrolling the queue page underneath once the inner panel hits its end,
-// so closing the modal leaves the user somewhere else on the page entirely.
-// Driven off whether ANY modal is currently open, so overlapping modals (the
-// investigations popup opens on top of the OPD form) can't unlock too early.
-function syncBodyScrollLock() {
-  const anyOpen = document.querySelectorAll('.modal.open, .confirm-overlay.open').length > 0;
-  document.body.classList.toggle('modal-open', anyOpen);
-}
+// syncBodyScrollLock() lives in ui.js. Note the modal roots here are
+// `.modal-overlay`, not `.modal` — the shared version matches both.
 
 // Opens a modal and applies the scroll lock in one step.
 function openModalEl(id) {

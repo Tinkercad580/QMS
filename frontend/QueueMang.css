@@ -393,17 +393,30 @@ button { cursor: pointer; border: none; background: none; }
 .modal { background: var(--surface); border-radius: var(--radius-xl); overflow: hidden; width: 100%; max-width: 680px; max-height: 90vh; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); animation: slideUp 0.22s cubic-bezier(0.16,1,0.3,1); }
 .modal-sm { max-width: 480px; }
 .modal-lg { max-width: 860px; }
-.modal-xl { max-width: 1180px; width: min(1180px, 96vw); }
+/* Wider on large screens so the history column can be given real room without
+   squeezing the new-visit form beside it. */
+.modal-xl { max-width: 1320px; width: min(1320px, 96vw); }
 
 .opd-modal-body { overflow: hidden; padding: 0; display: flex; flex: 1; min-height: 0; }
 .opd-two-col { display: flex; gap: 0; width: 100%; min-height: 0; min-width: 0; }
-.opd-col-left { width: 300px; flex-shrink: 0; min-height: 0; border-right: 1px solid var(--border); padding: 18px; overflow-y: auto; background: #f8fafc; }
+/* Was a fixed 300px, which wrapped almost every history line onto 2-3 rows and
+   made the column scroll far more than it needed to. It now scales with the
+   modal (clamped so it can't crowd out the form) and the padding is tighter,
+   so each entry gets noticeably more usable width. */
+.opd-col-left {
+  width: clamp(300px, 30%, 420px);
+  flex-shrink: 0; min-height: 0;
+  border-right: 1px solid var(--border);
+  padding: 12px 14px; overflow-y: auto; background: #f8fafc;
+}
 .opd-col-left.hidden { display: none; }
 .opd-col-right { flex: 1; min-width: 0; min-height: 0; padding: 18px 24px 24px; overflow-y: auto; }
 .opd-newvisit-label { display: block; font-weight: 700; color: var(--primary, #2563eb); margin-bottom: 10px; font-size: 13px; }
-.opd-left-heading { margin-bottom: 12px; }
-.opd-left-title { display: block; font-weight: 700; color: #334155; font-size: 13px; }
-.opd-left-sub { display: block; font-size: 10.5px; color: #94a3b8; font-style: italic; margin-top: 1px; }
+/* Title and the "read-only" note share one line instead of stacking, which
+   gives the history itself back a whole row of vertical space. */
+.opd-left-heading { margin-bottom: 8px; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.opd-left-title { font-weight: 700; color: #334155; font-size: 13px; }
+.opd-left-sub { font-size: 10px; color: #94a3b8; font-style: italic; }
 /* Scoped to `.modal` on purpose. This element carries BOTH .form-actions and
    .opd-modal-footer; .form-actions is defined later in this file and makes the
    bar `position: sticky; bottom: -24px`, which hung it past the modal's bottom
@@ -426,21 +439,25 @@ button { cursor: pointer; border: none; background: none; }
   .opd-col-right { max-height: none; }
 }
 
-.opd-history-panel { border: 1px solid var(--border); border-radius: var(--radius); padding: 6px; margin-bottom: 12px; max-height: 180px; overflow-y: auto; background: #fff; }
+/* Sized to its content (capped) rather than reserving a fixed block — with one
+   or two past visits this was holding back empty space above the record. */
+.opd-history-panel { border: 1px solid var(--border); border-radius: var(--radius); padding: 4px; margin-bottom: 8px; max-height: 148px; overflow-y: auto; background: #fff; }
 .opd-history-panel .opd-hist-empty { font-size: 12.5px; color: #94a3b8; padding: 6px; display: block; }
-.opd-hist-item { display: flex; justify-content: space-between; align-items: center; padding: 7px 8px; border-radius: 6px; cursor: pointer; font-size: 12.5px; }
+.opd-hist-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 12.5px; }
 .opd-hist-item:hover { background: #eef2ff; }
 .opd-hist-item .opd-hist-date { color: #64748b; font-family: "JetBrains Mono", monospace; font-size: 11.5px; }
 .opd-hist-item.active { background: #dbeafe; }
 
-.opd-hist-detail { font-size: 13px; color: #1e293b; display: flex; flex-direction: column; gap: 10px; background: #f8fafc; padding: 2px; }
-.opd-hist-detail .ohd-row { padding: 12px 14px; border-radius: 10px; background: #eff6ff; border: 1px solid #dbeafe; line-height: 1.6; }
+/* Padding kept deliberately tight throughout: in a side column every pixel of
+   horizontal padding costs a wrapped line, and these entries are long. */
+.opd-hist-detail { font-size: 12.5px; color: #1e293b; display: flex; flex-direction: column; gap: 8px; background: #f8fafc; padding: 0; }
+.opd-hist-detail .ohd-row { padding: 9px 10px; border-radius: 9px; background: #eff6ff; border: 1px solid #dbeafe; line-height: 1.5; }
 .opd-view-page-btn { display: block; margin-top: 8px; padding: 6px 12px; font-size: 11.5px; font-weight: 600; color: #fff; background: #0d9488; border: none; border-radius: 6px; cursor: pointer; }
 .opd-view-page-btn:hover { background: #0f766e; }
-.opd-hist-detail .ohd-label { display: block; font-weight: 700; color: #2563eb; text-transform: uppercase; font-size: 10.5px; letter-spacing: .04em; margin-bottom: 6px; }
+.opd-hist-detail .ohd-label { display: block; font-weight: 700; color: #2563eb; text-transform: uppercase; font-size: 10px; letter-spacing: .04em; margin-bottom: 5px; }
 .opd-hist-detail .ohd-value { white-space: pre-wrap; word-break: break-word; color: #334155; }
-.opd-hist-detail .ohd-items { display: flex; flex-direction: column; gap: 6px; }
-.opd-hist-detail .ohd-item { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 9px 11px; box-shadow: 0 1px 2px rgba(15,23,42,0.03); }
+.opd-hist-detail .ohd-items { display: flex; flex-direction: column; gap: 5px; }
+.opd-hist-detail .ohd-item { background: #fff; border: 1px solid #e2e8f0; border-radius: 7px; padding: 7px 9px; box-shadow: 0 1px 2px rgba(15,23,42,0.03); }
 .opd-hist-detail .ohd-vitals { display: flex; flex-wrap: wrap; gap: 6px; }
 .opd-hist-detail .ohd-vital-chip { background: #fff; color: #2563eb; border: 1px solid #dbeafe; border-radius: 5px; padding: 2px 7px; font-size: 11px; font-weight: 600; }
 .opd-hist-empty-detail { font-size: 12px; color: #94a3b8; text-align: center; padding: 20px 8px; }
@@ -500,17 +517,27 @@ button { cursor: pointer; border: none; background: none; }
 }
 .combo-wrap input:not(:placeholder-shown) ~ .combo-clear { display: flex; }
 .combo-clear:hover { background: rgba(15,23,42,0.22); color: var(--text); }
+/* Matches the filter dropdown (.cs-panel / .cs-option in ui.css) so both kinds
+   of dropdown in the app behave and look the same. */
 .combo-panel {
   display: none;
-  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30;
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 900;
   max-height: 220px; overflow-y: auto;
-  background: #fff; border: 1px solid var(--border); border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(15,23,42,0.12);
+  background: #fff; border: 1px solid var(--border); border-radius: var(--radius, 10px);
+  box-shadow: 0 12px 32px rgba(15,23,42,0.16);
+  padding: 4px;
 }
 .combo-panel.open { display: block; }
-.combo-option { padding: 8px 12px; font-size: 12.5px; color: var(--text); cursor: pointer; }
-.combo-option:hover { background: var(--primary-light); color: var(--primary); }
-.combo-empty { padding: 8px 12px; font-size: 12px; color: var(--text-faint); font-style: italic; }
+.combo-option {
+  padding: 8px 10px; border-radius: var(--radius-sm, 6px);
+  font-size: 12.5px; color: var(--text); cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+/* This used to reference var(--primary-light), which is only defined on the
+   Add Patient page — undefined here, so the whole background declaration was
+   invalid and dropped, leaving hover with no highlight at all. */
+.combo-option:hover { background: var(--primary-l, #eff6ff); color: var(--primary, #2563eb); }
+.combo-empty { padding: 8px 10px; font-size: 12px; color: var(--text-faint); font-style: italic; }
 
 .opd-add-med-btn {
   background: #fef3e2; color: #b45309; border: 1px solid #fde3c4; font-weight: 700;
@@ -666,59 +693,7 @@ button { cursor: pointer; border: none; background: none; }
 @media (max-width: 1024px) {
   .layout { padding: 16px 16px 80px; gap: 16px; }
 }
-/* ─── Loading feedback ───────────────────────────────────────
-   Top progress bar, shown automatically whenever a request is in flight
-   (see the fetch wrapper in QueueMang.js), plus the in-button spinner used
-   by withBusy() while a save/action is running. */
-.app-progress {
-  position: fixed; top: 0; left: 0; right: 0; height: 3px;
-  z-index: 9999; opacity: 0; pointer-events: none;
-  transition: opacity .2s ease;
-}
-.app-progress.active { opacity: 1; }
-.app-progress-fill {
-  height: 100%; width: 0;
-  background: linear-gradient(90deg, #2563eb, #38bdf8);
-  box-shadow: 0 0 8px rgba(37, 99, 235, .5);
-  transition: width .25s ease;
-}
-/* Creeps toward 90% while waiting — never reaching the end, because the
-   response time isn't known — then snaps to 100% on completion. */
-.app-progress.active .app-progress-fill { width: 90%; transition: width 8s cubic-bezier(.1, .8, .2, 1); }
-.app-progress.done .app-progress-fill { width: 100%; transition: width .2s ease; }
+/* Loading bar, spinner, skeleton and pending styles now live in ui.css. */
 
-.btn-spinner {
-  display: inline-block; width: 13px; height: 13px; margin-right: 7px;
-  vertical-align: -2px; border-radius: 50%;
-  border: 2px solid currentColor; border-top-color: transparent;
-  animation: btn-spin .6s linear infinite;
-}
-@keyframes btn-spin { to { transform: rotate(360deg); } }
-.is-busy { opacity: .75; cursor: progress; }
-button:disabled { cursor: not-allowed; }
-
-/* Skeleton placeholders for the very first queue load. */
-.queue-skeleton { display: flex; flex-direction: column; gap: 10px; padding: 4px; }
-.skel-card { height: 78px; border-radius: 10px; background: linear-gradient(90deg, #f1f5f9 25%, #e6ecf3 37%, #f1f5f9 63%); background-size: 400% 100%; animation: skel 1.3s ease infinite; }
-@keyframes skel { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
-
-/* ─── Modal scroll behaviour ─────────────────────────────────
-   Freeze the page behind an open modal (toggled by syncBodyScrollLock in
-   QueueMang.js). position:fixed would jump the page to the top, so overflow
-   alone is used and the scroll position is preserved. */
-body.modal-open { overflow: hidden; }
-
-/* Stop scroll chaining: once one of these panels reaches its end, the wheel
-   must NOT start scrolling whatever is behind it. */
-.modal-body,
-.opd-col-right,
-.opd-col-left,
-.opd-history-panel,
-.appt-list,
-.patient-search-results,
-.combo-panel { overscroll-behavior: contain; }
-
-/* Pending state for non-button click targets (queue cards, appointment rows)
-   while their action is in flight — see withPending() in QueueMang.js. */
-.is-pending { opacity: .55; cursor: progress; pointer-events: none; transition: opacity .15s ease; }
+/* Modal scroll lock, overscroll containment and pending state: see ui.css. */
 .ps-more { font-size: 11px; color: var(--text-faint); justify-content: center; }

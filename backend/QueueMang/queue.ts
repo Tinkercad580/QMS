@@ -3,6 +3,7 @@ import { Router, Request, Response } from 'express';
 import DynamicDatabaseService from '../../database_Manager/database.service';
 import { QUEUE_SCHEMA, PATIENT_SCHEMA } from '../../database_Manager/database.schemas';
 import { sendSms } from '../../Sms/sms.service'; // ⬅️ Import the real SMS utility
+import { broadcast } from '../realtime';
 import { findOrCreatePatient } from '../utils/patient.helper';
 
 const router = Router();
@@ -144,6 +145,7 @@ router.post('/', async (req: Request, res: Response) => {
         // Trigger staggered look-ahead for the line
         triggerStaggeredSms(date);
 
+        broadcast('queue');
         res.status(201).json({ success: true, id, token_number: token, message: 'Added to queue' });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });
@@ -200,6 +202,7 @@ router.post('/inject-appointment', async (req: Request, res: Response) => {
         // Trigger staggered look-ahead for the line
         triggerStaggeredSms(date);
 
+        broadcast('queue');
         res.status(201).json({ success: true, id, token_number: token });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });
@@ -235,6 +238,7 @@ router.post('/:id/action', async (req: Request, res: Response) => {
                 const firstId = firstWaiting[0].id;
                 await queueDb.update('queue_entries', { status: 'CALLED', called_at: now, updated_at: now }, 'id = ?', [firstId]);
                 triggerStaggeredSms(entry.queue_date);
+                broadcast('queue');
                 return res.json({ success: true, message: 'Queue started' });
             }
 
@@ -350,6 +354,7 @@ router.post('/:id/action', async (req: Request, res: Response) => {
                 }
                 await queueDb.delete('queue_entries', 'id = ?', [id]);
                 triggerStaggeredSms(entry.queue_date);
+                broadcast('queue');
                 return res.json({ success: true, message: 'Removed' });
             }
 
@@ -358,6 +363,7 @@ router.post('/:id/action', async (req: Request, res: Response) => {
 
         await queueDb.update('queue_entries', updates, 'id = ?', [id]);
         triggerStaggeredSms(entry.queue_date);
+        broadcast('queue');
         res.json({ success: true, message: 'Updated' });
     } catch (e: any) {
         res.status(500).json({ success: false, message: e.message });

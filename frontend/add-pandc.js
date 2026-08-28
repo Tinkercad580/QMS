@@ -51,23 +51,41 @@ const toastCont      = $('toast-container');
 
 // ─── INIT ──────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  showTableSkeleton();
   loadPatients();
   setDefaultVisitTime();
   bindEvents();
 });
 
+// Shimmer rows while the first load is in flight, so the table reads as
+// "loading" rather than as an empty registry.
+function showTableSkeleton(rows = 8) {
+  patientTbody.innerHTML = Array.from({ length: rows }, () => `
+    <tr class="skel-row"><td colspan="10"><div class="skel skel-line" style="height:20px"></div></td></tr>
+  `).join('');
+}
+
 // ─── LOAD PATIENTS ─────────────────────────────────────
-async function loadPatients() {
+async function loadPatients(silent = false) {
   try {
-    const res = await fetch(API);
+    const res = await fetch(API, { quiet: silent });
     const data = await res.json();
     if (data.success) {
       state.patients = data.patients || [];
       applyFilters();
       updateStats();
+    } else {
+      throw new Error(data.message || 'Failed to load patients');
     }
   } catch (e) {
+    console.error('[Patients] load failed', e);
     toast('error', 'Failed to load patients');
+    // Don't leave shimmer rows spinning forever on a failure.
+    if (!state.patients.length) {
+      patientTbody.innerHTML = `<tr class="empty-row"><td colspan="10">
+        <div class="empty-state"><p>Could not load patients — check your connection and refresh.</p></div>
+      </td></tr>`;
+    }
   }
 }
 
@@ -199,8 +217,10 @@ function bindEvents() {
       if (btn.dataset.action === 'delete') confirmDelete(id);
       return;
     }
+    // Opening the drawer fetches the patient's visit history, so the row shows
+    // a pending state and ignores a second click until it's done.
     const row = e.target.closest('tr[data-id]');
-    if (row) openDrawer(parseInt(row.dataset.id));
+    if (row) withPending(row, () => openDrawer(parseInt(row.dataset.id)));
   });
 
   // Sort
@@ -216,7 +236,10 @@ function bindEvents() {
   // Filters
   $('filter-gender').addEventListener('change', e => { state.filterGender = e.target.value; applyFilters(); });
   $('filter-blood').addEventListener('change', e => { state.filterBlood = e.target.value; applyFilters(); });
-  $('refresh-btn').addEventListener('click', () => { loadPatients(); toast('info', 'Refreshed'); });
+  $('refresh-btn').addEventListener('click', e => withBusy(e.currentTarget, async () => {
+    await loadPatients();
+    toast('info', 'Refreshed');
+  }, 'Refreshing…'));
 
   // Pagination
   $('prev-page').addEventListener('click', () => { if (state.page > 1) { state.page--; renderTable(); }});
@@ -275,19 +298,34 @@ function bindEvents() {
   $('close-visit-modal').addEventListener('click', closeVisitModal);
   $('cancel-visit').addEventListener('click', closeVisitModal);
   visitModal.addEventListener('click', e => { if (e.target === visitModal) closeVisitModal(); });
-  visitForm.addEventListener('submit', handleVisitSubmit);
+  visitForm.addEventListener('submit', e => {
+    e.preventDefault();
+    withBusy(visitForm.querySelector('[type=submit]'), () => handleVisitSubmit(e), 'Saving…');
+  });
 
   $('close-view-visit-modal').addEventListener('click', closeViewVisitModal);
   $('close-view-visit-btn').addEventListener('click', closeViewVisitModal);
   $('view-visit-modal').addEventListener('click', e => { if (e.target === $('view-visit-modal')) closeViewVisitModal(); });
 
   // Confirm dialog
-  $('confirm-cancel').addEventListener('click', () => { confirmOverlay.classList.remove('open'); state.pendingDeleteId = null; });
-  $('confirm-ok').addEventListener('click', async () => {
-    if (state.pendingDeleteId) await deletePatient(state.pendingDeleteId);
+  $('confirm-cancel').addEventListener('click', () => {
     confirmOverlay.classList.remove('open');
+    syncBodyScrollLock();
     state.pendingDeleteId = null;
   });
+  // Stays open with the button spinning until the delete actually completes,
+  // so a destructive action visibly finishes instead of the dialog vanishing
+  // while the request is still in flight.
+  $('confirm-ok').addEventListener('click', e => withBusy(e.currentTarget, async () => {
+    const id = state.pendingDeleteId;
+    state.pendingDeleteId = null;
+    try {
+      if (id) await deletePatient(id);
+    } finally {
+      confirmOverlay.classList.remove('open');
+      syncBodyScrollLock();
+    }
+  }, 'Deleting…'));
 
   // Keyboard
   document.addEventListener('keydown', e => {
@@ -354,12 +392,12 @@ function openModal(id = null) {
     $('submit-text').textContent = 'Save Patient';
   }
 
-  patientModal.classList.add('open');
+  patientModal.classList.add('open'); syncBodyScrollLock();
   setTimeout(() => document.getElementById('f-full-name').focus(), 100);
 }
 
 function closeModal() {
-  patientModal.classList.remove('open');
+  patientModal.classList.remove('open'); syncBodyScrollLock();
   state.editingId = null;
 }
 
@@ -429,7 +467,7 @@ function confirmDelete(id) {
   if (!p) return;
   $('confirm-title').textContent = `Delete "${p.full_name}"?`;
   state.pendingDeleteId = id;
-  confirmOverlay.classList.add('open');
+  confirmOverlay.classList.add('open'); syncBodyScrollLock();
 }
 
 async function deletePatient(id) {
@@ -513,11 +551,11 @@ async function openDrawer(id) {
   $('tab-bio').classList.add('active');
 
   drawerOverlay.classList.add('open');
-  drawer.classList.add('open');
+  drawer.classList.add('open'); syncBodyScrollLock();
 }
 
 function closeDrawer() {
-  drawer.classList.remove('open');
+  drawer.classList.remove('open'); syncBodyScrollLock();
   drawerOverlay.classList.remove('open');
   state.activeDrawerPatient = null;
 }
@@ -657,7 +695,6 @@ function fullOpdRecordHtml(rec, p) {
   try { investigations = rec.investigations ? JSON.parse(rec.investigations) : []; } catch { investigations = []; }
 
   const age = p.age ? `${p.age}Y ${p.gender || ''}`.trim() : '—';
-  const opdNo = rec.id ? `OPD-${rec.id}` : '—';
 
   const medsHtml = medicines.length
     ? `<table class="rx-med-table">
@@ -683,7 +720,6 @@ function fullOpdRecordHtml(rec, p) {
       <div><b>Patient Name</b>${esc(rec.patient_name || p.full_name)}</div>
       <div><b>Age / Gender</b>${age}</div>
       <div><b>Date</b>${esc(rec.visit_date)}</div>
-      <div><b>OPD No.</b>${opdNo}</div>
     </div>
     ${(vitals.bp || vitals.pulse || vitals.weight || vitals.height) ? `
     <div class="rx-patient-strip">
@@ -711,7 +747,7 @@ async function viewVisit(id) {
 
   state.viewingVisit = v;
   $('view-visit-body').innerHTML = '<p style="padding:12px 0;color:var(--text-faint)">Loading…</p>';
-  $('view-visit-modal').classList.add('open');
+  $('view-visit-modal').classList.add('open'); syncBodyScrollLock();
 
   let opdRecord = null;
   if (v.queue_entry_id) {
@@ -725,7 +761,7 @@ async function viewVisit(id) {
   $('view-visit-body').innerHTML = opdRecord ? fullOpdRecordHtml(opdRecord, p) : visitRecordHtml(v, p);
 }
 function closeViewVisitModal() {
-  $('view-visit-modal').classList.remove('open');
+  $('view-visit-modal').classList.remove('open'); syncBodyScrollLock();
   state.viewingVisit = null;
 }
 
@@ -735,9 +771,9 @@ function openVisitModal() {
   visitForm.reset();
   setDefaultVisitTime();
   $('visit-patient-id').value = state.activeDrawerPatient.id;
-  visitModal.classList.add('open');
+  visitModal.classList.add('open'); syncBodyScrollLock();
 }
-function closeVisitModal() { visitModal.classList.remove('open'); }
+function closeVisitModal() { visitModal.classList.remove('open'); syncBodyScrollLock(); }
 
 async function handleVisitSubmit(e) {
   e.preventDefault();

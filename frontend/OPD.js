@@ -485,7 +485,6 @@ async function handlePrint() {
 // ─── Printable Prescription ───────────────────────────
 function printOpdRecord(rec) {
   const age = rec.age ? `${rec.age}Y ${rec.gender || ''}`.trim() : '—';
-  const opdNo = rec.id ? `OPD-${rec.id}` : '—';
   const medsHtml = (rec.medicines || []).length
     ? `<table class="rx-med-table">
         <thead><tr><th>Medicine</th><th>Dose</th><th>Frequency</th><th>Duration</th><th>Route</th><th>Instruction</th></tr></thead>
@@ -504,8 +503,7 @@ function printOpdRecord(rec) {
       </table>`
     : '<p class="rx-empty">No investigations advised.</p>';
 
-  const win = window.open('', '_blank', 'width=800,height=900');
-  win.document.write(`
+  openPrintWindow(`
     <!DOCTYPE html><html><head><title>Prescription — ${rec.patient_name}</title>
     <style>
       body { font-family: 'Segoe UI', Arial, sans-serif; padding: 30px; color: #1e293b; }
@@ -549,7 +547,6 @@ function printOpdRecord(rec) {
         <div><b>Patient Name</b>${rec.patient_name}</div>
         <div><b>Age / Gender</b>${age}</div>
         <div><b>Date</b>${rec.visit_date}</div>
-        <div><b>OPD No.</b>${opdNo}</div>
       </div>
       ${rec.vitals && (rec.vitals.bp || rec.vitals.pulse || rec.vitals.weight || rec.vitals.height) ? `
       <div class="rx-patient-strip">
@@ -573,10 +570,8 @@ function printOpdRecord(rec) {
         </div>
       </div>
 
-      <script>window.onload = () => window.print();</script>
     </body></html>
   `);
-  win.document.close();
 }
 
 // ─── Init ──────────────────────────────────────────────
