@@ -195,10 +195,10 @@ function renderKPI(d) {
     $('kVisitsSub').textContent = `Patient visit records`;
 
     $('kAppts').textContent = fmtNum(d.total_appointments);
-    $('kApptsSub').textContent = `Booked appointments`;
+    $('kApptsSub').textContent = `Booked schedule`;
 
     $('kWalkins').textContent = fmtNum(d.total_footfall);
-    $('kWalkinsSub').textContent = 'Checked in today (walk-in + appointment)';
+    $('kWalkinsSub').textContent = 'Checked in today';
 
     $('kDone').textContent = fmtNum(d.total_done);
     $('kDoneSub').textContent = `Fully served patients`;

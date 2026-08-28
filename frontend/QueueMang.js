@@ -1243,11 +1243,15 @@ function bindEvents() {
       if (!entry) return;
       // Every branch below hits the network, so the card shows a pending state
       // and refuses a second click until it finishes.
+      // Clicking the card body only ever OPENS something — it must never change
+      // a patient's place in the queue. Calling a waiting patient and putting a
+      // missed one back are both decisions, so they're left to their own
+      // buttons (▶ Call and ↻ Re-queue) where they can't be hit by accident.
+      if (entry.status === 'WAITING' || entry.status === 'MISSED') return;
+
       withPending(card, async () => {
-        if (entry.status === 'WAITING') await callPatient(id);
-        else if (entry.status === 'CALLED' || entry.status === 'SERVING') { state.autoCallNext = true; await openOpdModal(entry); }
+        if (entry.status === 'CALLED' || entry.status === 'SERVING') { state.autoCallNext = true; await openOpdModal(entry); }
         else if (entry.status === 'HOLD') await openInvestModal(entry);
-        else if (entry.status === 'MISSED') { await queueAction(id, 'requeue'); toast('info', 'Re-queued at end'); }
         else if (entry.status === 'DONE' || entry.status === 'NOSHOW') { state.autoCallNext = false; await openServeModal(id); }
       });
       return;
@@ -1315,13 +1319,7 @@ function bindEvents() {
         await queueAction(id, 'miss');
         toast('warning', 'Moved to missed');
 
-        if (advance) {
-          await new Promise(r => setTimeout(r, 400));
-          const waiting = state.queue.filter(x => x.status === 'WAITING');
-          if (waiting.length > 0) await queueAction(waiting[0].id, 'call');
-          state.autoCallNext = false;
-          updateQueueButtonState();
-        }
+        if (advance) await callNextWaiting();
       }, '');
     }
     if (act === 'requeue') withBusy(btn, () => queueAction(id, 'requeue').then(() => toast('info', 'Re-queued at end')), '');
@@ -2206,14 +2204,20 @@ async function finishVisitAfterOpdSave(followUpDate) {
     follow_up_date: followUpDate || entry.follow_up_date || undefined,
   });
 
-  if (state.autoCallNext) {
-    setTimeout(async () => {
-      const waiting = state.queue.filter(x => x.status === 'WAITING');
-      if (waiting.length > 0) await queueAction(waiting[0].id, 'call');
-      state.autoCallNext = false;
-      updateQueueButtonState();
-    }, 400);
-  }
+  if (state.autoCallNext) callNextWaiting();
+}
+
+// Moves the first waiting patient into Ongoing. Every point where the doctor
+// stops with the current patient — visit saved, marked missed, or sent off for
+// an investigation — goes through here, so the queue always advances the same
+// way instead of each path reimplementing it (and one of them forgetting to).
+// The short delay lets the preceding status change land first.
+async function callNextWaiting({ delayMs = 400 } = {}) {
+  if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+  const waiting = state.queue.filter(x => x.status === 'WAITING');
+  if (waiting.length > 0) await queueAction(waiting[0].id, 'call');
+  state.autoCallNext = false;
+  updateQueueButtonState();
 }
 
 async function handleOpdInlineSubmit(e) {
@@ -2489,6 +2493,11 @@ async function handleHoldVisit() {
   if (result?.success) {
     toast('success', `⏸ ${entry.patient_name} put on hold — will resume when back`);
     closeModal('opd-modal');
+    // The patient has left the room for their investigation, so the doctor is
+    // free — pull the next one in, exactly as saving or missing a visit does.
+    // This was the only path that ended a consultation without advancing the
+    // queue, leaving Ongoing empty while people sat in Pending.
+    callNextWaiting();
   }
 }
 
@@ -2523,10 +2532,11 @@ async function handleServeSubmit(e) {
   const queueId = $('sf-queue-id').value;
   const data = Object.fromEntries(new FormData($('serve-form')));
 
-  // Hold keeps the visit open, so it must not advance to the next patient.
+  // Every one of these frees the doctor up, hold included — the held patient
+  // has gone off for an investigation, so the next person should come in.
   // NOSHOW is no longer offered in the dropdown but is still accepted here for
   // entries recorded that way before the option was removed.
-  const willAutoCall = state.autoCallNext && ['DONE', 'NOSHOW', 'MISSED'].includes(data.status);
+  const willAutoCall = state.autoCallNext && ['DONE', 'NOSHOW', 'MISSED', 'HOLD'].includes(data.status);
 
   // 👇 CRITICAL FIX: Manually grab the date because FormData ignores 'disabled' fields! 👇
   const dateField = $('sf-followup');
@@ -2564,15 +2574,7 @@ async function handleServeSubmit(e) {
     if (willAutoCall) {
       state.autoCallNext = true;
       updateQueueButtonState();
-
-      setTimeout(async () => {
-        const waiting = state.queue.filter(x => x.status === 'WAITING');
-        if (waiting.length > 0) {
-          await queueAction(waiting[0].id, 'call');
-        }
-        state.autoCallNext = false;
-        updateQueueButtonState();
-      }, 400);
+      callNextWaiting();
     }
   }
 }
