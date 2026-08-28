@@ -232,6 +232,10 @@ button { cursor: pointer; border: none; background: none; }
 .pending-dot     { background: var(--warning); }
 .completed-label { color: var(--text-faint); }
 .completed-dot   { background: var(--text-faint); }
+/* Missed sits last but still needs attention, so it keeps a warning colour
+   rather than the muted grey used for finished visits. */
+.missed-label    { color: var(--error); }
+.missed-dot      { background: var(--error); }
 
 /* ─── QUEUE CARD REFACTOR ───────────────────────────── */
 .qtoken {

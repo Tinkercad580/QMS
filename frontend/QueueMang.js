@@ -634,11 +634,14 @@ function renderQueue() {
     return;
   }
 
-  // Group into sections
+  // Group into sections. Missed is kept out of "Completed" and shown last —
+  // a missed patient still needs acting on (re-queue or remove), so filing
+  // them under finished visits buried them.
   const pending = list.filter(x => x.status === 'WAITING');
   const ongoing = list.filter(x => ['CALLED', 'SERVING'].includes(x.status));
   const onHold = list.filter(x => x.status === 'HOLD');
-  const completed = list.filter(x => ['DONE', 'NOSHOW', 'MISSED'].includes(x.status));
+  const completed = list.filter(x => ['DONE', 'NOSHOW'].includes(x.status));
+  const missed = list.filter(x => x.status === 'MISSED');
 
   let html = '';
 
@@ -668,6 +671,14 @@ function renderQueue() {
       <span class="qs-dot completed-dot"></span>Completed / Done (${completed.length})
     </div>`;
     html += completed.map((q, i) => queueCardHtml(q, i)).join('');
+  }
+
+  // Always last — these are the ones still needing a decision.
+  if (missed.length) {
+    html += `<div class="queue-section-label missed-label">
+      <span class="qs-dot missed-dot"></span>Missed (${missed.length})
+    </div>`;
+    html += missed.map((q, i) => queueCardHtml(q, i)).join('');
   }
 
   $('queue-list').innerHTML = html;
@@ -769,9 +780,13 @@ function queueCardHtml(q, i) {
       <svg viewBox="0 0 18 18" fill="none"><path d="M4 9.5l3.5 3.5 6.5-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>`;
 
-  const btnNoshow = `
-    <button class="qbtn qbtn-noshow" data-action="noshow" data-id="${q.id}" title="Mark No-show">
-      <svg viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M6 12l6-6M12 12L6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+  // Sits beside "Done" on an ongoing visit — same red weight the ✕ had, but it
+  // marks the patient Missed (moved to the end) rather than a No-show.
+  // data-advance tells the handler to call the next patient afterwards, which
+  // only makes sense when someone is actually being seen.
+  const btnMissedRed = `
+    <button class="qbtn qbtn-noshow" data-action="miss" data-advance="1" data-id="${q.id}" title="Mark Missed — move to end of queue">
+      <svg viewBox="0 0 18 18" fill="none"><path d="M4 9h7M14 6l-3 3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>`;
 
   // 👇 The missing btnRequeue is back! 👇
@@ -810,7 +825,10 @@ function queueCardHtml(q, i) {
   if (q.status === 'WAITING') {
     actions = btnCall + btnSkip + btnRemove;
   } else if (q.status === 'CALLED' || q.status === 'SERVING') {
-    actions = btnDone + btnNoshow;
+    // Missed rather than No-show: a called patient who doesn't come in has
+    // usually just stepped out, so they go to the end of the queue instead of
+    // being written off for the day.
+    actions = btnDone + btnMissedRed;
   } else if (q.status === 'HOLD') {
     actions = btnReport + btnResume + btnRemove;
   } else if (q.status === 'MISSED') {
@@ -1277,29 +1295,35 @@ function bindEvents() {
     }
 
     // ── UPGRADED: Small "No-show" button auto-advances without flickering
-    if (act === 'noshow') {
-      // 1. Turn on the memory flag BEFORE we process the no-show so the button stays blue
-      state.autoCallNext = true;
-      updateQueueButtonState();
+    if (act === 'miss') {
+      // Marking a called patient missed should move the doctor straight on to
+      // the next person — the behaviour the old No-show button had. Skipping
+      // someone from the waiting list (data-advance absent) must not, since
+      // nobody is being seen at that moment.
+      const advance = btn.dataset.advance === '1';
 
-      // Stays busy for the whole sequence — marking the no-show AND calling the
-      // next patient — so the button can't be clicked again mid-flight.
-      withBusy(btn, async () => {
-        await queueAction(id, 'noshow');
-        toast('warning', 'Marked no-show');
-
-        // Brief pause, then call the next person automatically
-        await new Promise(r => setTimeout(r, 400));
-        const waiting = state.queue.filter(x => x.status === 'WAITING');
-        if (waiting.length > 0) await queueAction(waiting[0].id, 'call');
-
-        // 2. Turn off the flag after the next person is successfully called
-        state.autoCallNext = false;
+      if (advance) {
+        // Flag set first so the "next patient" button stays highlighted
+        // throughout the sequence.
+        state.autoCallNext = true;
         updateQueueButtonState();
+      }
+
+      // Stays busy for the whole sequence — marking missed AND calling the next
+      // patient — so the button can't be clicked again mid-flight.
+      withBusy(btn, async () => {
+        await queueAction(id, 'miss');
+        toast('warning', 'Moved to missed');
+
+        if (advance) {
+          await new Promise(r => setTimeout(r, 400));
+          const waiting = state.queue.filter(x => x.status === 'WAITING');
+          if (waiting.length > 0) await queueAction(waiting[0].id, 'call');
+          state.autoCallNext = false;
+          updateQueueButtonState();
+        }
       }, '');
     }
-
-    if (act === 'miss') withBusy(btn, () => queueAction(id, 'miss').then(() => toast('warning', 'Moved to missed')), '');
     if (act === 'requeue') withBusy(btn, () => queueAction(id, 'requeue').then(() => toast('info', 'Re-queued at end')), '');
     if (act === 'resume') withBusy(btn, () => queueAction(id, 'resume').then(() => toast('success', '▶ Back from investigation — returned to Waiting')), '');
     if (act === 'remove') confirmAction('🗑️', 'Remove from queue?', 'This will permanently remove this entry.', () => queueAction(id, 'remove'));
@@ -2499,7 +2523,10 @@ async function handleServeSubmit(e) {
   const queueId = $('sf-queue-id').value;
   const data = Object.fromEntries(new FormData($('serve-form')));
 
-  const willAutoCall = state.autoCallNext && (data.status === 'DONE' || data.status === 'NOSHOW' || data.status === 'MISSED');
+  // Hold keeps the visit open, so it must not advance to the next patient.
+  // NOSHOW is no longer offered in the dropdown but is still accepted here for
+  // entries recorded that way before the option was removed.
+  const willAutoCall = state.autoCallNext && ['DONE', 'NOSHOW', 'MISSED'].includes(data.status);
 
   // 👇 CRITICAL FIX: Manually grab the date because FormData ignores 'disabled' fields! 👇
   const dateField = $('sf-followup');
