@@ -345,13 +345,6 @@ router.post('/:id/action', async (req: Request, res: Response) => {
                 updates.status = 'WAITING';
                 updates.called_at = entry.called_at || now;
                 updates.served_at = null;
-                // Re-queuing after a no-show/miss means the patient is back in
-                // the queue, so a linked appointment must not stay marked
-                // NOSHOW — otherwise today's schedule keeps showing them as a
-                // no-show while they're actually sitting in the waiting room.
-                if (entry.appointment_id) {
-                    await queueDb.update('appointments', { status: 'QUEUED', updated_at: now }, 'id = ?', [entry.appointment_id]);
-                }
                 break;
             }
 

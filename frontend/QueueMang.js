@@ -815,16 +815,10 @@ function queueCardHtml(q, i) {
     actions = btnReport + btnResume + btnRemove;
   } else if (q.status === 'MISSED') {
     actions = btnRequeue + btnRemove;
-  } else if (q.status === 'NOSHOW') {
-    // A no-show who turns up later needs a way back into the queue — without
-    // this the entry was a dead end and staff had to delete it and re-add the
-    // patient from scratch. Re-queue reuses the same entry (and puts the linked
-    // appointment back to QUEUED) rather than creating a duplicate.
-    actions = btnRequeue + btnViewOpd + btnEditOpd;
-  } else if (q.status === 'DONE') {
+  } else if (q.status === 'DONE' || q.status === 'NOSHOW') {
     // btnReopen (Edit Outcome/Payment) intentionally omitted — clicking anywhere
     // on the card itself already opens the same outcome/payment editor for a
-    // DONE entry (see the card-level click handler), so the icon was redundant.
+    // DONE/NOSHOW entry (see the card-level click handler), so the icon was redundant.
     actions = btnViewOpd + btnEditOpd;
   }
 
