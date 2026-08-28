@@ -2505,18 +2505,28 @@ async function handleServeSubmit(e) {
   const dateField = $('sf-followup');
   const actualFollowUpDate = dateField ? dateField.value : null;
 
-  const payload = {
-    status: data.status,
-    amount_paid: data.amount_paid ? parseFloat(data.amount_paid) : 0,
-    follow_up_date: actualFollowUpDate // <-- Uses the manual value! Diagnosis/Rx come from the linked OPD record.
-  };
+  // Hold isn't an outcome of the visit — it parks the patient mid-visit while
+  // they go for an investigation, so it uses the same 'hold' action as the OPD
+  // form's Hold button rather than 'complete'. Everything else finalises the
+  // visit and goes through 'complete'.
+  const isHold = data.status === 'HOLD';
 
-  const result = await queueAction(parseInt(queueId), 'complete', payload);
+  const payload = isHold
+    ? { reason: 'Gone for investigation — will return today with report' }
+    : {
+      status: data.status,
+      amount_paid: data.amount_paid ? parseFloat(data.amount_paid) : 0,
+      follow_up_date: actualFollowUpDate // <-- Uses the manual value! Diagnosis/Rx come from the linked OPD record.
+    };
+
+  const result = await queueAction(parseInt(queueId), isHold ? 'hold' : 'complete', payload);
 
   if (result?.success) {
-    const statusMsg = { DONE: '✅ Marked done', NOSHOW: '❌ Marked no-show', MISSED: '⏭ Moved to missed', SERVING: '🔄 Still serving' };
+    const statusMsg = { DONE: '✅ Marked done', NOSHOW: '❌ Marked no-show', MISSED: '⏭ Moved to missed', HOLD: '⏸ Put on hold — will resume when back', SERVING: '🔄 Still serving' };
     
-    if (actualFollowUpDate) {
+    // A hold doesn't record a follow-up (the visit isn't finished), so it must
+    // not claim one was saved even if a date is sitting in the field.
+    if (actualFollowUpDate && !isHold) {
       toast('success', `✅ Saved! Follow-up date noted for ${new Date(actualFollowUpDate).toLocaleDateString()}`);
     } else {
       toast('success', statusMsg[data.status] || 'Updated');
