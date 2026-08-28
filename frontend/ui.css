@@ -130,3 +130,9 @@ body.modal-open { overflow: hidden; }
 
 /* Table skeleton rows (patient registry first load). */
 tr.skel-row td { padding: 12px 14px; border: none; }
+
+/* Icon-only buttons (queue card actions) get a spinner sized to the button
+   rather than the text-button default, since withBusy() replaces their SVG. */
+.qbtn.is-busy, .action-btn.is-busy { display: inline-flex; align-items: center; justify-content: center; }
+.qbtn.is-busy .btn-spinner,
+.action-btn.is-busy .btn-spinner { width: 12px; height: 12px; margin: 0; vertical-align: middle; }

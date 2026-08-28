@@ -358,14 +358,15 @@ function initCombobox(input, getOptions) {
   });
   input.insertAdjacentElement('afterend', clearBtn);
 
+  // Returns false when there's nothing to suggest, so the caller can leave the
+  // panel closed instead of showing an empty box — typing a brand new value is
+  // normal here, and an "unmatched" message just got in the way of the field.
   const render = () => {
     const q = input.value.trim().toLowerCase();
     const options = getOptions().filter(o => !q || o.toLowerCase().includes(q));
-    if (!options.length) {
-      panel.innerHTML = '<div class="combo-empty">No matches — keep typing to add a new one</div>';
-    } else {
-      panel.innerHTML = options.map(o => `<div class="combo-option">${escapeAttr(o)}</div>`).join('');
-    }
+    if (!options.length) { panel.innerHTML = ''; return false; }
+
+    panel.innerHTML = options.map(o => `<div class="combo-option">${escapeAttr(o)}</div>`).join('');
     panel.querySelectorAll('.combo-option').forEach(el => {
       el.addEventListener('mousedown', e => {
         e.preventDefault(); // keep focus so the click registers before blur closes the panel
@@ -373,12 +374,13 @@ function initCombobox(input, getOptions) {
         closeCombo();
       });
     });
+    return true;
   };
   // Pinned to the viewport while open so the scrolling OPD column / modal body
   // can't clip the suggestion list (see positionFloatingPanel in ui.js).
   let comboFloating = null;
   const openCombo = () => {
-    render();
+    if (!render()) { closeCombo(); return; }
     panel.classList.add('open');
     if (comboFloating) comboFloating.destroy();
     comboFloating = typeof positionFloatingPanel === 'function'
@@ -417,13 +419,14 @@ function initTextareaCombo(textarea, getOptions) {
     return lines[lines.length - 1].replace(/^-\s*/, '').trim().toLowerCase();
   };
 
+  // Returns false when nothing matches, so the panel stays closed rather than
+  // showing an empty "no matches" box over the field the doctor is typing in.
   const render = () => {
     const q = currentLineQuery();
     const options = getOptions().filter(o => !q || o.toLowerCase().includes(q));
-    panel.innerHTML = options.length
-      ? options.map(o => `<div class="combo-option">${escapeAttr(o)}</div>`).join('')
-      : '<div class="combo-empty">No matches — keep typing to add a new one</div>';
+    if (!options.length) { panel.innerHTML = ''; return false; }
 
+    panel.innerHTML = options.map(o => `<div class="combo-option">${escapeAttr(o)}</div>`).join('');
     panel.querySelectorAll('.combo-option').forEach(el => {
       el.addEventListener('mousedown', e => {
         e.preventDefault(); // keep focus so the click registers before blur closes the panel
@@ -432,15 +435,17 @@ function initTextareaCombo(textarea, getOptions) {
         textarea.value = lines.join('\n') + '\n- ';
         textarea.dispatchEvent(new Event('input', { bubbles: true })); // keeps autosize in sync
         textarea.focus();
-        render();
+        // Re-open so the panel closes itself if the fresh line matches nothing.
+        openCombo();
       });
     });
+    return true;
   };
   // Pinned to the viewport while open so the scrolling OPD column / modal body
   // can't clip the suggestion list (see positionFloatingPanel in ui.js).
   let comboFloating = null;
   const openCombo = () => {
-    render();
+    if (!render()) { closeCombo(); return; }
     panel.classList.add('open');
     if (comboFloating) comboFloating.destroy();
     comboFloating = typeof positionFloatingPanel === 'function'
@@ -1256,7 +1261,7 @@ function bindEvents() {
     // the report comment without opening the full OPD form.
     if (act === 'report') {
       const entry = state.queue.find(q => q.id === id);
-      if (entry) openInvestModal(entry);
+      if (entry) withBusy(btn, () => openInvestModal(entry), '');
     }
 
     // Lets staff/doctor see exactly what was filled in for a completed visit —
@@ -1277,20 +1282,21 @@ function bindEvents() {
       state.autoCallNext = true;
       updateQueueButtonState();
 
-      queueAction(id, 'noshow').then(() => {
+      // Stays busy for the whole sequence — marking the no-show AND calling the
+      // next patient — so the button can't be clicked again mid-flight.
+      withBusy(btn, async () => {
+        await queueAction(id, 'noshow');
         toast('warning', 'Marked no-show');
 
-        // Wait half a second, then call the next person automatically
-        setTimeout(async () => {
-          const waiting = state.queue.filter(x => x.status === 'WAITING');
-          if (waiting.length > 0) {
-            await queueAction(waiting[0].id, 'call');
-          }
-          // 2. Turn off the flag after the next person is successfully called
-          state.autoCallNext = false;
-          updateQueueButtonState();
-        }, 400);
-      });
+        // Brief pause, then call the next person automatically
+        await new Promise(r => setTimeout(r, 400));
+        const waiting = state.queue.filter(x => x.status === 'WAITING');
+        if (waiting.length > 0) await queueAction(waiting[0].id, 'call');
+
+        // 2. Turn off the flag after the next person is successfully called
+        state.autoCallNext = false;
+        updateQueueButtonState();
+      }, '');
     }
 
     if (act === 'miss') withBusy(btn, () => queueAction(id, 'miss').then(() => toast('warning', 'Moved to missed')), '');
