@@ -707,9 +707,9 @@ function fullOpdRecordHtml(rec, p) {
 
   const investHtml = investigations.length
     ? `<table class="rx-med-table">
-        <thead><tr><th>Investigation</th><th>Detail / Area</th><th>Instruction</th><th>Report Comment</th></tr></thead>
+        <thead><tr><th>Investigation</th><th>Detail / Area</th><th>Instruction</th></tr></thead>
         <tbody>${investigations.map(i => `
-          <tr><td>${esc(i.type)}</td><td>${esc(i.detail)}</td><td>${esc(i.instruction)}</td><td>${esc(i.comment)}</td></tr>
+          <tr><td>${esc(i.type)}</td><td>${esc(i.detail)}</td><td>${esc(i.instruction)}</td></tr>
         `).join('')}</tbody>
       </table>`
     : '<p class="rx-empty">No investigations advised.</p>';

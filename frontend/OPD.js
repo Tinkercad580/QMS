@@ -41,9 +41,16 @@ const MED_INSTRUCTION_OPTIONS = [
 
 // Common investigations for an Ortho / Bone Fracture / Trauma & Spine practice, plus general labs.
 const INVESTIGATION_OPTIONS = [
-  'X-Ray', 'MRI', 'CT Scan', 'Bone Density (DEXA)', 'Ultrasound',
-  'CBC', 'Blood Sugar (Fasting/PP)', 'HbA1c', 'ESR/CRP', 'Serum Calcium', 'Vitamin D',
-  'ECG', 'Other',
+  'X-Ray', 'CBC', 'MRI', 'CT Scan', 'Bone Density (DEXA)', 'Ultrasound',
+  'Blood Sugar (Fasting/PP)', 'HbA1c', 'ESR/CRP', 'Serum Calcium', 'Vitamin D (25-OH)', 'ECG',
+  'Serum Uric Acid', 'RA Factor', 'Anti-CCP', 'ANA (Antinuclear Antibody)',
+  'Serum Vitamin B12', 'Thyroid Profile (T3/T4/TSH)', 'Serum Alkaline Phosphatase',
+  'Serum Phosphorus', 'Serum PTH (Intact)', 'KFT (Urea/Creatinine)', 'LFT',
+  'Serum Electrolytes', 'Blood Group & Rh Typing', 'PT/INR (Coagulation Profile)',
+  'Viral Markers (HIV/HBsAg/HCV)', 'Urine Routine & Microscopy', '2D Echo',
+  'Nerve Conduction Study (NCV)', 'EMG', 'Bone Scan (Whole Body)',
+  'Pus / Wound Culture & Sensitivity', 'Synovial Fluid Analysis',
+  'FNAC / Biopsy', 'Doppler Study', 'Other',
 ];
 
 const state = {
@@ -247,7 +254,6 @@ function addInvestigationRow(inv = {}) {
     <div><label>Investigation</label><select class="inv-type"><option value="">Select…</option>${options}</select></div>
     <div><label>Detail / Area</label><input type="text" class="inv-detail" placeholder="e.g. Right Knee" value="${escapeAttr(inv.detail)}" /></div>
     <div><label>Instruction</label><input type="text" class="inv-instruction" placeholder="e.g. get done before next visit" value="${escapeAttr(inv.instruction)}" /></div>
-    <div><label>Report Comment</label><input type="text" class="inv-comment" placeholder="Findings once report is in…" value="${escapeAttr(inv.comment)}" /></div>
     <button type="button" class="opd-med-remove" title="Remove">✕</button>
   `;
   row.querySelector('.opd-med-remove').addEventListener('click', () => row.remove());
@@ -259,14 +265,13 @@ function collectInvestigations() {
     type: row.querySelector('.inv-type').value,
     detail: row.querySelector('.inv-detail').value.trim(),
     instruction: row.querySelector('.inv-instruction').value.trim(),
-    comment: row.querySelector('.inv-comment').value.trim(),
   })).filter(i => i.type);
 }
 
 function investigationsToText(invs) {
   return invs.map(i => {
     const label = [i.type, i.detail].filter(Boolean).join(' - ');
-    const extra = [i.instruction, i.comment ? `Report: ${i.comment}` : ''].filter(Boolean).join(' | ');
+    const extra = i.instruction || '';
     return [label, extra].filter(Boolean).join('\n');
   }).join('\n\n');
 }
@@ -496,9 +501,9 @@ function printOpdRecord(rec) {
 
   const investHtml = (rec.investigations || []).length
     ? `<table class="rx-med-table">
-        <thead><tr><th>Investigation</th><th>Detail / Area</th><th>Instruction</th><th>Report Comment</th></tr></thead>
+        <thead><tr><th>Investigation</th><th>Detail / Area</th><th>Instruction</th></tr></thead>
         <tbody>${rec.investigations.map(i => `
-          <tr><td>${i.type}</td><td>${i.detail || ''}</td><td>${i.instruction || ''}</td><td>${i.comment || ''}</td></tr>
+          <tr><td>${i.type}</td><td>${i.detail || ''}</td><td>${i.instruction || ''}</td></tr>
         `).join('')}</tbody>
       </table>`
     : '<p class="rx-empty">No investigations advised.</p>';

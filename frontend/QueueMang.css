@@ -497,7 +497,6 @@ button { cursor: pointer; border: none; background: none; }
 .opd-invest-row label { font-size: 10px; font-weight: 700; color: #0f766e; text-transform: uppercase; letter-spacing: 0.03em; display: block; margin-bottom: 3px; }
 .opd-invest-row .opd-med-remove { position: absolute; top: 10px; right: 10px; margin-top: 0; }
 @media (max-width: 480px) { .opd-invest-row { grid-template-columns: 1fr 1fr; } }
-.opd-invest-row.compact { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 .opd-invest-row.checkable label { display: flex; align-items: center; gap: 6px; cursor: default; }
 .opd-invest-row .inv-checked { width: 15px; height: 15px; accent-color: #14b8a6; cursor: pointer; flex-shrink: 0; }
 .opd-invest-row.row-off { background: #f8fafc; border-color: var(--border); }

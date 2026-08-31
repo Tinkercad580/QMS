@@ -57,52 +57,193 @@ const MED_INSTRUCTION_OPTIONS = [
 // here is saved (via /api/opd/options) so it shows up as a suggestion for the next patient too.
 const INVESTIGATION_OPTIONS = [
   'X-Ray', 'CBC', 'MRI', 'CT Scan', 'Bone Density (DEXA)', 'Ultrasound',
-  'Blood Sugar (Fasting/PP)', 'HbA1c', 'ESR/CRP', 'Serum Calcium', 'Vitamin D', 'ECG',
+  'Blood Sugar (Fasting/PP)', 'HbA1c', 'ESR/CRP', 'Serum Calcium', 'Vitamin D (25-OH)', 'ECG',
+  'Serum Uric Acid', 'RA Factor', 'Anti-CCP', 'ANA (Antinuclear Antibody)',
+  'Serum Vitamin B12', 'Thyroid Profile (T3/T4/TSH)', 'Serum Alkaline Phosphatase',
+  'Serum Phosphorus', 'Serum PTH (Intact)', 'KFT (Urea/Creatinine)', 'LFT',
+  'Serum Electrolytes', 'Blood Group & Rh Typing', 'PT/INR (Coagulation Profile)',
+  'Viral Markers (HIV/HBsAg/HCV)', 'Urine Routine & Microscopy', '2D Echo',
+  'Nerve Conduction Study (NCV)', 'EMG', 'Bone Scan (Whole Body)',
+  'Pus / Wound Culture & Sensitivity', 'Synovial Fluid Analysis',
+  'FNAC / Biopsy', 'Doppler Study',
 ];
 
 // What "Detail / Area" actually means depends on which investigation was picked —
-// an X-Ray/MRI/CT needs a body part, a blood test needs a sample condition, etc.
+// an X-Ray/MRI/CT needs a body part (and often a specific view), a blood test needs
+// a sample condition, a nerve study needs the limb, etc.
 // Matches the real workload of an Ortho / Bone Fracture / Trauma & Spine practice.
 // Anything the doctor needs beyond this list can still be typed in manually.
 const INVESTIGATION_DETAIL_OPTIONS = {
   'X-Ray': [
-    'Right Knee', 'Left Knee', 'Both Knees', 'Right Knee (Weight-bearing)', 'Left Knee (Weight-bearing)',
-    'Right Shoulder', 'Left Shoulder', 'Right Hip', 'Left Hip', 'Pelvis with Both Hips',
-    'Right Ankle', 'Left Ankle', 'Right Foot', 'Left Foot', 'Right Wrist', 'Left Wrist',
-    'Right Elbow', 'Left Elbow', 'Right Hand', 'Left Hand', 'Right Forearm', 'Left Forearm',
-    'Right Leg (Tibia-Fibula)', 'Left Leg (Tibia-Fibula)', 'Right Femur', 'Left Femur',
-    'Cervical Spine', 'Dorsal (Thoracic) Spine', 'Lumbosacral Spine', 'Whole Spine (Scoliosis Series)', 'Chest',
+    'Right Knee (AP/Lateral)', 'Left Knee (AP/Lateral)', 'Both Knees (AP/Lateral)',
+    'Right Knee (Weight-bearing)', 'Left Knee (Weight-bearing)', 'Both Knees (Standing AP)',
+    'Right Knee (Skyline / Patellar View)', 'Left Knee (Skyline / Patellar View)',
+    'Right Shoulder (AP/Axillary)', 'Left Shoulder (AP/Axillary)',
+    'Right Shoulder (Y-View)', 'Left Shoulder (Y-View)',
+    'Right Hip (AP/Lateral)', 'Left Hip (AP/Lateral)', 'Pelvis with Both Hips (AP)',
+    'Right Hip (Frog-leg Lateral)', 'Left Hip (Frog-leg Lateral)',
+    'Right Ankle (AP/Lateral/Mortise)', 'Left Ankle (AP/Lateral/Mortise)',
+    'Right Foot (AP/Oblique)', 'Left Foot (AP/Oblique)',
+    'Right Foot (Weight-bearing Lateral)', 'Left Foot (Weight-bearing Lateral)',
+    'Right Heel (Calcaneum Lateral/Axial)', 'Left Heel (Calcaneum Lateral/Axial)',
+    'Right Wrist (AP/Lateral)', 'Left Wrist (AP/Lateral)',
+    'Right Wrist (Scaphoid View)', 'Left Wrist (Scaphoid View)',
+    'Right Elbow (AP/Lateral)', 'Left Elbow (AP/Lateral)',
+    'Right Hand (AP/Oblique)', 'Left Hand (AP/Oblique)',
+    'Right Forearm (Radius-Ulna)', 'Left Forearm (Radius-Ulna)',
+    'Right Leg (Tibia-Fibula)', 'Left Leg (Tibia-Fibula)',
+    'Right Femur (Full Length)', 'Left Femur (Full Length)',
+    'Right Humerus', 'Left Humerus', 'Right Clavicle', 'Left Clavicle',
+    'Cervical Spine (AP/Lateral)', 'Cervical Spine (Flexion-Extension)',
+    'Cervical Spine (Oblique Views)', 'Dorsal (Thoracic) Spine (AP/Lateral)',
+    'Lumbosacral Spine (AP/Lateral)', 'Lumbosacral Spine (Flexion-Extension)',
+    'Whole Spine (Scoliosis Series, Standing)', 'Sacroiliac Joints (Ferguson View)',
+    'Chest (PA — Pre-operative)', 'Both Legs (Scanogram / Limb Length)',
   ],
   'MRI': [
-    'Right Knee (without contrast)', 'Left Knee (without contrast)', 'Right Shoulder', 'Left Shoulder',
-    'Right Hip', 'Left Hip', 'Right Ankle', 'Left Ankle', 'Right Wrist', 'Left Wrist',
-    'Cervical Spine', 'Dorsal Spine', 'Lumbosacral Spine (LS Spine, Screening)',
+    'Right Knee (Plain)', 'Left Knee (Plain)', 'Right Knee (with Contrast)', 'Left Knee (with Contrast)',
+    'Right Shoulder (Plain)', 'Left Shoulder (Plain)', 'Right Shoulder (MR Arthrogram)', 'Left Shoulder (MR Arthrogram)',
+    'Right Hip (Plain)', 'Left Hip (Plain)', 'Both Hips (AVN Protocol)',
+    'Right Ankle', 'Left Ankle', 'Right Foot', 'Left Foot',
+    'Right Wrist', 'Left Wrist', 'Right Elbow', 'Left Elbow',
+    'Cervical Spine', 'Dorsal (Thoracic) Spine', 'Lumbosacral Spine',
+    'Lumbosacral Spine (Screening / Whole Spine)', 'Brachial Plexus',
+    'Soft Tissue / Swelling (Local Part)',
   ],
   'CT Scan': [
-    'Right Knee', 'Left Knee', 'Right Hip', 'Left Hip', 'Pelvis',
+    'Right Knee', 'Left Knee', 'Right Hip', 'Left Hip', 'Pelvis (with 3D Reconstruction)',
     'Right Ankle (3D Reconstruction)', 'Left Ankle (3D Reconstruction)',
-    'Right Wrist (Scaphoid View)', 'Left Wrist (Scaphoid View)',
-    'Cervical Spine', 'Lumbosacral Spine', 'Whole Spine (3D Reconstruction)',
+    'Right Wrist (Scaphoid Protocol)', 'Left Wrist (Scaphoid Protocol)',
+    'Right Shoulder (3D Reconstruction)', 'Left Shoulder (3D Reconstruction)',
+    'Right Foot (Hindfoot)', 'Left Foot (Hindfoot)',
+    'Cervical Spine', 'Dorsal Spine', 'Lumbosacral Spine', 'Whole Spine (3D Reconstruction)',
+    'Head (Trauma — Plain)', 'Chest (Pre-operative)',
   ],
-  'Bone Density (DEXA)': ['Lumbar Spine + Hip (Standard)', 'Forearm', 'Whole Body'],
+  'Bone Density (DEXA)': [
+    'Lumbar Spine + Left Hip (Standard)', 'Lumbar Spine + Right Hip',
+    'Both Hips', 'Forearm (Distal Radius)', 'Whole Body Composition',
+  ],
   'Ultrasound': [
-    'Right Shoulder (Rotator Cuff)', 'Left Shoulder (Rotator Cuff)', 'Right Knee', 'Left Knee',
-    'Soft Tissue Swelling', 'Doppler — Lower Limb (DVT Screening)',
+    'Right Shoulder (Rotator Cuff)', 'Left Shoulder (Rotator Cuff)',
+    'Right Knee', 'Left Knee', 'Right Ankle / Tendo-Achilles', 'Left Ankle / Tendo-Achilles',
+    'Right Heel (Plantar Fascia)', 'Left Heel (Plantar Fascia)',
+    'Soft Tissue Swelling (Local Part)', 'Abdomen & Pelvis (Pre-operative)',
   ],
-  'CBC': ['Fasting Sample', 'Random Sample'],
-  'Blood Sugar (Fasting/PP)': ['Fasting', 'Post-Prandial (PP)', 'Random'],
-  'HbA1c': ['Fasting Sample'],
-  'ESR/CRP': ['Fasting Sample', 'Random Sample'],
-  'Serum Calcium': ['Fasting Sample'],
-  'Vitamin D': ['Fasting Sample'],
+  'Doppler Study': [
+    'Right Lower Limb — Venous (DVT Screening)', 'Left Lower Limb — Venous (DVT Screening)',
+    'Both Lower Limbs — Venous', 'Right Lower Limb — Arterial', 'Left Lower Limb — Arterial',
+    'Right Upper Limb', 'Left Upper Limb',
+  ],
+  'Nerve Conduction Study (NCV)': [
+    'Right Upper Limb', 'Left Upper Limb', 'Both Upper Limbs',
+    'Right Lower Limb', 'Left Lower Limb', 'Both Lower Limbs',
+    'Median Nerve (Carpal Tunnel)', 'Ulnar Nerve', 'Common Peroneal Nerve',
+  ],
+  'EMG': [
+    'Right Upper Limb', 'Left Upper Limb', 'Right Lower Limb', 'Left Lower Limb',
+    'Paraspinal Muscles (Radiculopathy)',
+  ],
+  'Bone Scan (Whole Body)': ['Whole Body (Three-phase)', 'Regional / Local Part (SPECT)'],
+  'Pus / Wound Culture & Sensitivity': [
+    'Wound Swab', 'Pus Aspirate', 'Operative Tissue Sample', 'Implant / Sinus Tract Swab',
+  ],
+  'Synovial Fluid Analysis': [
+    'Right Knee Aspirate', 'Left Knee Aspirate', 'Cell Count + Crystals',
+    'Culture & Sensitivity', 'Gram Stain + AFB',
+  ],
+  'FNAC / Biopsy': [
+    'Soft Tissue Swelling', 'Bone Lesion (Guided)', 'Lymph Node', 'Synovium',
+  ],
+  'CBC': ['Fasting Sample', 'Random Sample', 'With Peripheral Smear', 'Pre-operative'],
+  'Blood Sugar (Fasting/PP)': ['Fasting', 'Post-Prandial (PP)', 'Fasting + PP', 'Random'],
+  'HbA1c': ['Fasting Sample', 'Random Sample'],
+  'ESR/CRP': ['Fasting Sample', 'Random Sample', 'CRP (Quantitative)', 'ESR only'],
+  'Serum Calcium': ['Fasting Sample', 'Total + Ionised Calcium', 'With Serum Albumin'],
+  'Vitamin D (25-OH)': ['Fasting Sample', 'Random Sample'],
+  'Vitamin D': ['Fasting Sample', 'Random Sample'],
+  'Serum Uric Acid': ['Fasting Sample', 'Random Sample'],
+  'RA Factor': ['Fasting Sample', 'Quantitative'],
+  'Anti-CCP': ['Fasting Sample', 'Quantitative'],
+  'ANA (Antinuclear Antibody)': ['ANA by IFA', 'ANA Profile / Blot'],
+  'Serum Vitamin B12': ['Fasting Sample', 'Random Sample'],
+  'Thyroid Profile (T3/T4/TSH)': ['Fasting Sample', 'TSH only'],
+  'Serum Alkaline Phosphatase': ['Fasting Sample', 'Random Sample'],
+  'Serum Phosphorus': ['Fasting Sample', 'With Serum Calcium'],
+  'Serum PTH (Intact)': ['Fasting Sample', 'With Serum Calcium + Vitamin D'],
+  'KFT (Urea/Creatinine)': ['Fasting Sample', 'Pre-operative', 'With Serum Electrolytes'],
+  'LFT': ['Fasting Sample', 'Pre-operative'],
+  'Serum Electrolytes': ['Na / K / Cl', 'Pre-operative'],
+  'Blood Group & Rh Typing': ['Pre-operative', 'With Cross-match'],
+  'PT/INR (Coagulation Profile)': ['Pre-operative', 'PT/INR + aPTT', 'On Anticoagulant — Monitoring'],
+  'Viral Markers (HIV/HBsAg/HCV)': ['Pre-operative Screening'],
+  'Urine Routine & Microscopy': ['Routine + Microscopy', 'With Culture & Sensitivity', 'Pre-operative'],
   'ECG': ['Resting ECG', 'Pre-operative ECG'],
+  '2D Echo': ['Pre-operative (with Doppler)', 'Cardiac Evaluation'],
 };
 
-// Generic starting suggestions for the Instruction field — also scoped per
-// investigation type (same combination idea as Detail/Area), grows from there.
+// Generic starting suggestions for the Instruction field. Scoped per investigation
+// type (same combination idea as Detail/Area), and every type additionally falls
+// back to COMMON_INSTRUCTION_OPTIONS so no investigation is left without hints.
+const COMMON_INSTRUCTION_OPTIONS = [
+  'Get done before next visit', 'Get done today', 'Report to be brought on next visit',
+  'Urgent — report same day', 'Pre-operative workup', 'Repeat after 3 months',
+  'Repeat after 6 months', 'Only if pain persists', 'Compare with previous films',
+];
+
 const INVESTIGATION_INSTRUCTION_OPTIONS = {
-  'X-Ray': ['Get done before next visit', 'Weight-bearing view required'],
-  'MRI': ['Get done before next visit', 'Only if X-ray shows severe changes'],
+  'X-Ray': [
+    'Get done before next visit', 'Weight-bearing view required', 'Standing view required',
+    'Include both sides for comparison', 'Post-operative check film',
+    'Carry previous films for comparison', 'Post-plaster / post-reduction check',
+  ],
+  'MRI': [
+    'Get done before next visit', 'Only if X-ray shows severe changes',
+    'Plain study — no contrast needed', 'Rule out implants/pacemaker before scan',
+    'Carry previous X-rays to the scan',
+  ],
+  'CT Scan': [
+    'Get done before next visit', '3D reconstruction required',
+    'Pre-operative planning — urgent', 'Fine cuts through the fracture site',
+  ],
+  'Bone Density (DEXA)': [
+    'Baseline before starting treatment', 'Repeat after 12 months',
+    'Carry previous DEXA report for comparison',
+  ],
+  'Ultrasound': ['Get done before next visit', 'Dynamic study required', 'Compare with opposite side'],
+  'Doppler Study': ['Urgent — rule out DVT', 'Get done today', 'Report to be shown immediately'],
+  'Nerve Conduction Study (NCV)': [
+    'Get done before next visit', 'Study both sides for comparison', 'Combine with EMG',
+  ],
+  'EMG': ['Get done before next visit', 'Combine with NCV'],
+  'CBC': ['Fasting — 8 hours', 'Pre-operative workup', 'Repeat after 1 week', 'Get done today'],
+  'Blood Sugar (Fasting/PP)': ['Fasting — 8 hours', 'PP sample 2 hours after meal', 'Pre-operative workup'],
+  'HbA1c': ['Repeat after 3 months', 'Pre-operative workup'],
+  'ESR/CRP': ['Repeat after 1 week', 'Urgent — rule out infection', 'Monitor response to treatment'],
+  'Serum Calcium': ['Fasting — 8 hours', 'With Vitamin D and Alkaline Phosphatase'],
+  'Vitamin D (25-OH)': ['Fasting — 8 hours', 'Repeat after 3 months of supplementation'],
+  'Vitamin D': ['Fasting — 8 hours', 'Repeat after 3 months of supplementation'],
+  'Serum Uric Acid': ['Fasting — 8 hours', 'Avoid high-protein meal the previous night', 'Repeat after 2 weeks'],
+  'RA Factor': ['With ESR/CRP', 'Fasting not required'],
+  'Anti-CCP': ['With RA Factor', 'Fasting not required'],
+  'ANA (Antinuclear Antibody)': ['With ESR/CRP and RA Factor', 'Only if inflammatory arthritis suspected'],
+  'Serum Alkaline Phosphatase': ['With Serum Calcium and Phosphorus', 'Fasting — 8 hours'],
+  'Serum Phosphorus': ['With Serum Calcium and Vitamin D', 'Fasting — 8 hours'],
+  'Serum Electrolytes': ['Pre-operative workup', 'Get done today'],
+  'Serum Vitamin B12': ['Fasting — 8 hours', 'Stop supplements 48 hours before the test'],
+  'Thyroid Profile (T3/T4/TSH)': ['Fasting — 8 hours', 'Morning sample preferred'],
+  'Serum PTH (Intact)': ['With Serum Calcium and Vitamin D', 'Morning fasting sample'],
+  'KFT (Urea/Creatinine)': ['Pre-operative workup', 'Before starting NSAIDs', 'Repeat after 2 weeks'],
+  'LFT': ['Pre-operative workup', 'Before starting long-term medication'],
+  'Blood Group & Rh Typing': ['Pre-operative workup', 'Arrange blood units for surgery'],
+  'PT/INR (Coagulation Profile)': ['Pre-operative workup', 'Stop blood thinners as advised', 'Urgent — before surgery'],
+  'Viral Markers (HIV/HBsAg/HCV)': ['Pre-operative screening — mandatory'],
+  'Urine Routine & Microscopy': ['Early morning midstream sample', 'Pre-operative workup'],
+  'ECG': ['Pre-operative workup', 'Get done today'],
+  '2D Echo': ['Pre-operative cardiac clearance', 'Physician opinion along with the report'],
+  'Bone Scan (Whole Body)': ['Get done before next visit', 'Carry previous X-rays and reports'],
+  'Pus / Wound Culture & Sensitivity': ['Collect sample before starting antibiotics', 'Urgent — report in 48 hours'],
+  'Synovial Fluid Analysis': ['Send for cell count, crystals and culture', 'Urgent — rule out septic arthritis'],
+  'FNAC / Biopsy': ['Image-guided sampling', 'Carry MRI/CT films to the procedure'],
 };
 
 // Common presenting complaints for an Ortho / Bone Fracture / Trauma & Spine
@@ -1156,7 +1297,7 @@ function bindEvents() {
   $('close-invest-modal').addEventListener('click', () => closeModal('invest-modal'));
   $('cancel-invest-modal').addEventListener('click', () => closeModal('invest-modal'));
   $('invest-modal').addEventListener('click', e => { if (e.target === $('invest-modal')) closeModal('invest-modal'); });
-  $('invest-add-btn').addEventListener('click', () => addInvestigationRow('invest-quick-list', {}, { showComment: false }));
+  $('invest-add-btn').addEventListener('click', () => addInvestigationRow('invest-quick-list', {}));
   $('invest-save-btn').addEventListener('click', e => withBusy(e.currentTarget, handleInvestSave, 'Saving…'));
   $('invest-print-btn').addEventListener('click', e => withBusy(e.currentTarget, handleInvestPrint, 'Preparing…'));
 
@@ -1278,8 +1419,8 @@ function bindEvents() {
       }
     }
 
-    // Investigation report entry for a patient on Hold — lets staff/doctor record
-    // the report comment without opening the full OPD form.
+    // Investigation entry for a patient on Hold — lets staff/doctor record
+    // investigations without opening the full OPD form.
     if (act === 'report') {
       const entry = state.queue.find(q => q.id === id);
       if (entry) withBusy(btn, () => openInvestModal(entry), '');
@@ -1526,13 +1667,11 @@ function openServeModal(queueId) {
 // A lightweight companion to the full OPD record: lets the doctor advise
 // investigations (X-Ray, MRI, labs…) without opening the whole OPD form.
 // Both modals read/write the same opd_records.investigations field, so
-// whatever is selected here shows up in the full OPD record automatically —
-// only the Report Comment (added once the report is back) is OPD-record-only.
+// whatever is selected here shows up in the full OPD record automatically.
 async function openInvestModal(entry) {
   const pat = entry.patient_id ? state.allPatients.find(p => String(p.id) === String(entry.patient_id)) : null;
 
   state.investEntry = entry;
-  state.investOriginal = [];
   $('iv-record-id').value = '';
   $('iv-strip-name').textContent = entry.patient_name || '—';
   $('iv-strip-mobile').textContent = entry.mobile || '—';
@@ -1548,19 +1687,18 @@ async function openInvestModal(entry) {
       $('iv-record-id').value = existing.id;
       let invs = [];
       try { invs = existing.investigations ? JSON.parse(existing.investigations) : []; } catch { invs = []; }
-      state.investOriginal = invs;
-      invs.forEach(i => addInvestigationRow('invest-quick-list', i, { showComment: false }));
+      invs.forEach(i => addInvestigationRow('invest-quick-list', i));
     }
   } catch (e) { console.error('[Investigations] load failed', e); }
 
-  if (!$('invest-quick-list').children.length) addDefaultInvestigationRows('invest-quick-list', { showComment: false });
+  if (!$('invest-quick-list').children.length) addDefaultInvestigationRows('invest-quick-list');
 }
 
 async function handleInvestSave() {
   const entry = state.investEntry;
   if (!entry) return;
 
-  const investigations = mergeInvestigationComments(collectInvestigations('invest-quick-list'), state.investOriginal);
+  const investigations = collectInvestigations('invest-quick-list');
   const recordId = $('iv-record-id').value;
   const payload = {
     patient_id: entry.patient_id || null,
@@ -1582,7 +1720,6 @@ async function handleInvestSave() {
     const data = await res.json();
     if (!data.success) throw new Error(data.message);
     if (!recordId) $('iv-record-id').value = data.id;
-    state.investOriginal = investigations;
     saveCustomOptionsBulk(collectCustomOptions([], investigations));
 
     // If the full OPD form for this same visit is open behind this popup, reflect
@@ -1604,7 +1741,7 @@ async function handleInvestSave() {
 async function handleInvestPrint() {
   const entry = state.investEntry;
   if (!entry) return;
-  const investigations = mergeInvestigationComments(collectInvestigations('invest-quick-list'), state.investOriginal);
+  const investigations = collectInvestigations('invest-quick-list');
   if (!investigations.length) { toast('warning', 'Add at least one investigation first'); return; }
 
   await handleInvestSave();
@@ -1845,9 +1982,8 @@ function medicinesToText(meds) {
 }
 
 // ─── Investigation rows (structured Investigations Advised) ──
-// Shared between the full OPD modal's list (with Report Comment) and the
-// serve modal's quick "Investigations Advised" list (comment-free — a report
-// comment can only be added once the actual report is back, from the full OPD record).
+// Shared between the full OPD modal's list and the serve modal's quick
+// "Investigations Advised" list.
 function clearInvestigationRows(containerId) {
   $(containerId).innerHTML = '';
 }
@@ -1856,12 +1992,11 @@ function clearInvestigationRows(containerId) {
 // that most patients need but some don't — unchecking excludes the row from
 // being saved without having to delete it.
 function addInvestigationRow(containerId, inv = {}, opts = {}) {
-  const showComment = opts.showComment !== false;
   const checkable = !!opts.checkable;
   const checked = inv.checked !== false;
   const list = $(containerId);
   const row = document.createElement('div');
-  row.className = 'opd-invest-row' + (showComment ? '' : ' compact') + (checkable ? ' checkable' : '') + (checkable && !checked ? ' row-off' : '');
+  row.className = 'opd-invest-row' + (checkable ? ' checkable' : '') + (checkable && !checked ? ' row-off' : '');
   row.innerHTML = `
     <div><label>${checkable ? `<input type="checkbox" class="inv-checked" ${checked ? 'checked' : ''} /> ` : ''}Investigation</label>
       <div class="combo-wrap">
@@ -1881,14 +2016,16 @@ function addInvestigationRow(containerId, inv = {}, opts = {}) {
         <div class="combo-panel"></div>
       </div>
     </div>
-    ${showComment ? `<div><label>Report Comment</label><input type="text" class="inv-comment" placeholder="Findings once report is in…" value="${escapeAttr(inv.comment)}" /></div>` : ''}
     <button type="button" class="opd-med-remove" title="Remove">✕</button>
   `;
   initCombobox(row.querySelector('.inv-type'), () => state.investigationOptions);
   // Detail/Area and Instruction suggestions both depend on whichever investigation
   // is currently typed in this same row (X-Ray → body parts, CBC → sample type, etc.).
   initCombobox(row.querySelector('.inv-detail'), () => state.investigationDetailOptions[row.querySelector('.inv-type').value.trim()] || []);
-  initCombobox(row.querySelector('.inv-instruction'), () => state.investigationInstructionOptions[row.querySelector('.inv-type').value.trim()] || []);
+  initCombobox(row.querySelector('.inv-instruction'), () => {
+    const type = row.querySelector('.inv-type').value.trim();
+    return mergeCustomFirst(state.investigationInstructionOptions[type] || [], COMMON_INSTRUCTION_OPTIONS);
+  });
   if (checkable) {
     row.querySelector('.inv-checked').addEventListener('change', e => {
       row.classList.toggle('row-off', !e.target.checked);
@@ -1917,25 +2054,13 @@ function collectInvestigations(containerId) {
       type: row.querySelector('.inv-type').value.trim(),
       detail: row.querySelector('.inv-detail').value.trim(),
       instruction: row.querySelector('.inv-instruction').value.trim(),
-      comment: row.querySelector('.inv-comment')?.value.trim() || '',
     })).filter(i => i.type);
-}
-
-// The quick investigation modal has no Report Comment field — when saving from
-// there, carry over any comment already stored against the same investigation
-// so a save from the quick modal never wipes out a report comment.
-function mergeInvestigationComments(investigations, original) {
-  return investigations.map(inv => {
-    if (inv.comment) return inv;
-    const match = (original || []).find(o => o.type === inv.type && (o.detail || '') === (inv.detail || ''));
-    return match ? { ...inv, comment: match.comment || '' } : inv;
-  });
 }
 
 function investigationsToText(invs) {
   return invs.map(i => {
     const label = [i.type, i.detail].filter(Boolean).join(' - ');
-    const extra = [i.instruction, i.comment ? `Report: ${i.comment}` : ''].filter(Boolean).join(' | ');
+    const extra = i.instruction || '';
     return [label, extra].filter(Boolean).join('\n');
   }).join('\n\n');
 }
@@ -2080,7 +2205,7 @@ function renderHistDetail(rec) {
   rows.push(listField('Diagnosis', rec.diagnosis, 'ohd-diagnosis-row'));
 
   if (invs.length) {
-    const invLines = invs.map(i => [i.type, i.detail].filter(Boolean).join(' - ') + (i.comment ? ` → ${i.comment}` : ''));
+    const invLines = invs.map(i => [i.type, i.detail].filter(Boolean).join(' - '));
     rows.push(`<div class="ohd-row ohd-invest-row"><span class="ohd-label">Investigations Advised</span>${itemBoxes(invLines)}</div>`);
   }
   if (rec.previous_investigations) {
@@ -2303,9 +2428,9 @@ function printOpdRecord(rec, opts = {}) {
 
   const investHtml = (rec.investigations || []).length
     ? `<table class="rx-med-table">
-        <thead><tr><th>Investigation</th><th>Detail / Area</th><th>Instruction</th><th>Report Comment</th></tr></thead>
+        <thead><tr><th>Investigation</th><th>Detail / Area</th><th>Instruction</th></tr></thead>
         <tbody>${rec.investigations.map(i => `
-          <tr><td>${i.type}</td><td>${i.detail || ''}</td><td>${i.instruction || ''}</td><td>${i.comment || ''}</td></tr>
+          <tr><td>${i.type}</td><td>${i.detail || ''}</td><td>${i.instruction || ''}</td></tr>
         `).join('')}</tbody>
       </table>`
     : '<p class="rx-empty">No investigations advised.</p>';
