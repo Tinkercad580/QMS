@@ -246,29 +246,90 @@ const INVESTIGATION_INSTRUCTION_OPTIONS = {
   'FNAC / Biopsy': ['Image-guided sampling', 'Carry MRI/CT films to the procedure'],
 };
 
-// Common presenting complaints for an Ortho / Bone Fracture / Trauma & Spine
-// practice — covers the joints/regions and symptom patterns seen most often.
-// Anything the doctor needs beyond this list is still just typed in and saved.
+// ─── Presenting complaints ───────────────────────────────
+// The doctor's own complaint sheet drives this list, so their wording comes
+// first in the dropdown; the older general ortho entries sit underneath.
+// Anything needed beyond this list is still just typed in and saved.
+//
+// The sheet lists the body regions once ("Complaint of: Pain in …") and then
+// says "as above" for swelling and stiffness, so the regions are declared once
+// here and the three complaint phrasings are built from them.
+// Paired regions are expanded into left / right / both because the dropdown
+// filters as you type — typing "knee" narrows straight to those three rows,
+// so the side never has to be typed by hand.
+const PAIRED_REGIONS = [
+  ['left knee joint', 'right knee joint', 'both knee joints'],
+  ['left elbow joint', 'right elbow joint', 'both elbow joints'],
+  ['left wrist joint', 'right wrist joint', 'both wrist joints'],
+  ['left hand', 'right hand', 'both hands'],
+  ['left foot', 'right foot', 'both feet'],
+  ['left ankle', 'right ankle', 'both ankles'],
+  ['left toe / toes', 'right toe / toes', 'both toes'],
+  ['left shoulder', 'right shoulder', 'both shoulders'],
+  ['left hip joint', 'right hip joint', 'both hip joints'],
+];
+
+// Regions in the order the doctor's sheet lists them. `joint` marks the ones
+// that also take a swelling/stiffness complaint ("which area or joint"),
+// which leaves out the trunk/abdominal regions where only pain makes sense.
+const COMPLAINT_REGIONS = [
+  { name: 'joints', joint: true },
+  ...PAIRED_REGIONS.slice(0, 7).flatMap(sides => sides.map(name => ({ name, joint: true }))),
+  { name: 'neck', joint: true },
+  ...PAIRED_REGIONS.slice(7).flatMap(sides => sides.map(name => ({ name, joint: true }))),
+  { name: 'multiple joints', joint: true },
+  { name: 'lower back', joint: true },
+  { name: 'upper back', joint: true },
+  { name: 'mid back', joint: true },
+  { name: 'ribs', joint: false },
+  { name: 'chest', joint: false },
+  { name: 'abdomen', joint: false },
+  { name: 'upper abdomen', joint: false },
+  { name: 'umbilicus', joint: false },
+  { name: 'occipital region', joint: false },
+  { name: 'left calf', joint: false },
+  { name: 'right calf', joint: false },
+  { name: 'both calves', joint: false },
+];
+
 const HISTORY_COMPLAINT_OPTIONS = [
-  'Right Knee pain', 'Left Knee pain', 'Both Knees pain', 'Lower back pain', 'Neck pain',
-  'Right Shoulder pain', 'Left Shoulder pain', 'Right Hip pain', 'Left Hip pain',
-  'Right Ankle pain', 'Left Ankle pain', 'Right Wrist pain', 'Left Wrist pain',
-  'Right Elbow pain', 'Left Elbow pain', 'Heel pain', 'Swelling in joint',
-  'Stiffness in joint', 'Morning stiffness', 'Night pain', 'Difficulty walking',
-  'Limping', 'Numbness/tingling in limb', 'Weakness in limb', 'Restricted range of motion',
+  // Pain — every region on the sheet.
+  ...COMPLAINT_REGIONS.map(r => `Pain in ${r.name}`),
+  // Radiating pain — the sheet asks "to which/both hands or legs".
+  'Radiating pain to left hand', 'Radiating pain to right hand', 'Radiating pain to both hands',
+  'Radiating pain to left leg', 'Radiating pain to right leg', 'Radiating pain to both legs',
+  // Swelling and stiffness — same joints/areas as the pain list.
+  ...COMPLAINT_REGIONS.filter(r => r.joint).map(r => `Swelling in ${r.name}`),
+  ...COMPLAINT_REGIONS.filter(r => r.joint).map(r => `Stiffness in ${r.name}`),
+  // General symptoms, in the order the sheet lists them.
+  'Fever', 'Headache', 'Loss of appetite', 'Cough', 'Cold', 'Weight loss',
+  'Constipation', 'Loose motions',
+  'Tremors in neck', 'Tremors in hands', 'Tremors all over body',
+  'Difficulty in walking',
+  'Difficulty in lifting with left hand', 'Difficulty in lifting with right hand',
+  'Difficulty in lifting with both hands',
+  'Loss of balance', 'Giddiness', 'Vomiting', 'Giddiness with vomiting', 'Nausea',
+  'Eructations', 'Bleeding PR',
+  'Rash all over body', 'Rash on hand', 'Rash on leg',
+  // Older general ortho entries the sheet doesn't cover.
+  'Heel pain', 'Morning stiffness', 'Night pain', 'Limping',
+  'Numbness/tingling in limb', 'Weakness in limb', 'Restricted range of motion',
   'Clicking/popping sound in joint', 'Instability of joint', 'Deformity of limb',
   'Pain after fall', 'Pain after road traffic accident', 'Sports injury',
   'Pain while climbing stairs', 'Pain while squatting', 'Post-operative follow-up',
 ];
 
-// Common comorbidities relevant to an ortho pre-op/general assessment.
+// Past history — the doctor's sheet first, then the other comorbidities
+// relevant to an ortho pre-op/general assessment.
 const PREVIOUS_ILLNESS_OPTIONS = [
-  'Diabetes mellitus', 'Hypertension', 'Hypothyroidism', 'Osteoporosis',
-  'Rheumatoid Arthritis', 'Osteoarthritis', 'Asthma', 'Coronary Artery Disease',
-  'Chronic Kidney Disease', 'Tuberculosis (past)', 'Anemia', 'Gout',
-  'Previous Fracture', 'Previous Surgery', 'Obesity', 'Epilepsy',
-  'Cervical Spondylosis', 'Lumbar Spondylosis', 'Peripheral Vascular Disease',
-  'No known illness',
+  'Diabetes mellitus', 'Hypertension', 'Hypotension',
+  'Hyperthyroidism', 'Hypothyroidism', 'Hyperuricemia', 'Hypercholesterolemia',
+  'IHD (Ischemic Heart Disease)', 'CKD (Chronic Kidney Disease)', 'Liver disease',
+  'Angioplasty', 'CABG (Bypass surgery)', 'Any other surgery',
+  'Osteoporosis', 'Rheumatoid Arthritis', 'Osteoarthritis', 'Asthma',
+  'Tuberculosis (past)', 'Anemia', 'Gout', 'Previous Fracture', 'Obesity',
+  'Epilepsy', 'Cervical Spondylosis', 'Lumbar Spondylosis',
+  'Peripheral Vascular Disease', 'No known illness',
 ];
 
 const today = () => {
