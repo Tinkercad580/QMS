@@ -377,6 +377,15 @@ button { cursor: pointer; border: none; background: none; }
 .appt-status-dot.NOSHOW   { background: var(--error); }
 /* ─── TIME RANGE BADGE ──────────────────────── */
 /* ─── TIME RANGE BADGE ─── */
+/* Booked but not arrived yet — the pill is a placeholder until the patient
+   reaches the clinic and is added to the queue. */
+.appt-time-pill.pending {
+  background: var(--bg-soft, #f1f5f9);
+  border-color: var(--border, #e2e8f0);
+  color: var(--text-faint, #94a3b8);
+  font-weight: 600;
+}
+
 .appt-time-pill {
   display: inline-block;
   background: #eff6ff;      /* Vibrant Sky Blue background */

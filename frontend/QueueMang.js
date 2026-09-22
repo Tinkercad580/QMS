@@ -1214,6 +1214,22 @@ function renderAppointmentPanel() {
       }
     }
 
+    // The clinic doesn't run to fixed slots, so the booked time is no more use
+    // here than it was on the queue card. What the doctor wants to see is when
+    // the patient actually reached the clinic and was added to the queue — the
+    // linked queue entry's created_at. Until that happens the pill stays empty,
+    // so the list doubles as "who is still to arrive".
+    // The entry is in memory whenever the schedule and the queue are showing the
+    // same date, which is the normal case — both default to today.
+    const queued = state.queue.find(e => e.appointment_id != null && String(e.appointment_id) === String(a.id));
+    const arrivalTime = queued ? clockTime(queued.created_at) : '';
+
+    // Doctor names are stored with the title already on them ("Dr. Jayaraja
+    // Puthran"), so prefixing unconditionally rendered "Dr. Dr. Jayaraja Puthran".
+    const doctorLabel = a.doctor
+      ? (/^dr\.?\s/i.test(a.doctor.trim()) ? a.doctor.trim() : `Dr. ${a.doctor.trim()}`)
+      : '';
+
     // ── NEW: Mobile Number Tag (Colored) ───────────────────
     const mobileTag = a.mobile
       ? `<div style="font-size:10px; color:var(--secondary); font-weight:600; background:var(--secondary-l); padding:2px 6px; border-radius:4px; display:flex; align-items:center; gap:3px;">
@@ -1227,8 +1243,8 @@ function renderAppointmentPanel() {
     // ... inside renderAppointmentPanel ...
     return `
       <div class="appt-item" data-appt-id="${a.id}">
-        <div class="appt-time-pill">
-          ${(a.slot_time || '—').replace(' - ', '<br><span style="color:var(--text-faint);font-size:8px;">to</span><br>')}
+        <div class="appt-time-pill${arrivalTime ? '' : ' pending'}" title="${arrivalTime ? `Reached and added to the queue at ${esc(arrivalTime)}` : 'Not arrived yet'}">
+          ${arrivalTime ? esc(arrivalTime) : '—'}
         </div>
         
         <div style="flex:1; min-width:0;">
@@ -1236,7 +1252,7 @@ function renderAppointmentPanel() {
             ${esc(a.patient_name)} ${demoStr}
           </div>
           <div style="display:flex; gap:10px; align-items:center; margin-top:3px;">
-            <div class="appt-doc">${a.doctor ? `Dr. ${esc(a.doctor)}` : a.visit_type || ''}</div>
+            <div class="appt-doc">${doctorLabel ? esc(doctorLabel) : esc(a.visit_type || '')}</div>
             ${mobileTag}
           </div>
         </div>

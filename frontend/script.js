@@ -680,7 +680,7 @@ function renderDrawerTab(tab) {
       <span class="visit-type-badge">${item.visitType || 'OPD'}</span>
     </div>
 
-    ${item.doctor ? `<div class="visit-row-doctor">Dr. ${escHtml(item.doctor)}</div>` : ''}
+    ${item.doctor ? `<div class="visit-row-doctor">${escHtml(/^dr\.?\s/i.test(item.doctor.trim()) ? item.doctor.trim() : `Dr. ${item.doctor.trim()}`)}</div>` : ''}
 
     ${item.diagnosis ? `<div class="visit-row-label"><strong>Diagnosis</strong>${escHtml(item.diagnosis)}</div>` : ''}
 
