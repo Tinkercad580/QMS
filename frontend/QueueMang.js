@@ -1045,9 +1045,25 @@ function queueCardHtml(q, i) {
     ? `<span class="priority-chip priority-${q.priority}">${q.priority === 'EMERGENCY' ? 'EMERG' : 'VIP'}</span>`
     : '';
 
+  // Money is only worth showing once it has actually been collected. The card
+  // used to also show the expected fee as a "pending" amount while the patient
+  // was still waiting, which read like a bill had been raised before the visit.
   const amountTag = q.amount_paid > 0
     ? `<span class="qmeta-item fee-paid">₹${q.amount_paid}</span>`
-    : (q.fee > 0 ? `<span class="qmeta-item fee-pending">₹${q.fee}</span>` : '');
+    : '';
+
+  // The clinic doesn't run to fixed slots, so the booked appointment time was
+  // misleading on the floor — a patient booked for 10:00 might be seen at 11:40.
+  // What's actually useful is when they joined the list: the check-in moment for
+  // an appointment, the add moment for a walk-in. Both are created_at.
+  const arrivalTag = q.created_at
+    ? `<span class="qmeta-item" style="color:var(--primary); background:var(--primary-l); padding:2px 6px; border-radius:4px; font-family:var(--font-mono); font-weight:600;" title="Joined the queue at ${esc(clockTime(q.created_at))}">
+        <svg viewBox="0 0 14 14" fill="none" width="11" height="11" style="margin-right:3px;">
+          <circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.3"/>
+          <path d="M7 4v3l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>${esc(clockTime(q.created_at))}
+      </span>`
+    : '';
 
   const holdTag = q.status === 'HOLD' && q.hold_reason
     ? `<span class="qmeta-item" style="color:#7c3aed; background:#f5f3ff; padding:2px 6px; border-radius:4px;" title="${esc(q.hold_reason)}">⏸ ${esc(q.hold_reason)}</span>`
@@ -1067,19 +1083,20 @@ function queueCardHtml(q, i) {
           ${q.mobile ? `<span class="qmeta-item" style="color:var(--secondary); font-weight:600; background:var(--secondary-l); padding:2px 6px; border-radius:4px;"><svg viewBox="0 0 14 14" fill="none" width="11" height="11"><rect x="3" y="1" width="8" height="12" rx="1.5" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="11" r="0.7" fill="currentColor"/></svg>${q.mobile}</span>` : ''}
           ${amountTag}
           ${holdTag}
-          ${q.slot_time && isAppt ? `
-            <span class="qmeta-item" style="color:var(--primary); background:var(--primary-l); padding:2px 6px; border-radius:4px; font-family:var(--font-mono); font-weight:600;">
-              <svg viewBox="0 0 14 14" fill="none" width="11" height="11" style="margin-right:3px;">
-                <circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.3"/>
-                <path d="M7 4v3l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-              </svg>${q.slot_time}
-            </span>` : ''}        </div>
+          ${arrivalTag}        </div>
       </div>
       <div class="qright">
         <span class="status-badge ${q.status}">${statusLabel(q.status)}</span>
         <div class="qactions">${actions}</div>
       </div>
     </div>`;
+}
+
+// 12-hour wall-clock time (10:05 am) from a stored ISO timestamp.
+function clockTime(isoString) {
+  const d = new Date(isoString);
+  if (isNaN(d)) return '';
+  return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase();
 }
 
 function statusLabel(s) {
